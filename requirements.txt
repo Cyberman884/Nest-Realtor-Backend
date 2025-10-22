@@ -3,4 +3,4 @@ uvicorn
 pydantic
 httpx
 jinja2
-sqlite3
+pysqlite3-binary
