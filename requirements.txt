@@ -4,3 +4,4 @@ pydantic
 httpx
 jinja2
 pysqlite3-binary
+gunicorn
