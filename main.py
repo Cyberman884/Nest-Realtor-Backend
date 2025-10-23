@@ -4,6 +4,10 @@ from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 import uvicorn, os, sqlite3, json
 
 app = FastAPI(title='Nest Realtor API')
+@app.get("/test")
+def test_route():
+    return {"status": "success", "message": "Nest Realtor backend is fully live!"}
+
 
 DB = 'leads.db'
 
