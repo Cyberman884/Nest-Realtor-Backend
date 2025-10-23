@@ -7,6 +7,36 @@ app = FastAPI(title='Nest Realtor API')
 @app.get("/test")
 def test_route():
     return {"status": "success", "message": "Nest Realtor backend is fully live!"}
+import requests
+
+@app.get("/test_payment")
+def test_payment():
+    secret_key = os.getenv("YOCO_SECRET_KEY")
+    if not secret_key:
+        return {"error": "Missing Yoco secret key in environment variables"}
+
+    headers = {
+        "X-Auth-Secret-Key": secret_key,
+        "Content-Type": "application/json"
+    }
+
+    # Simulated test payment payload
+    payload = {
+        "token": "tok_test_visa_4242_03",
+        "amountInCents": 1000,  # R10.00
+        "currency": "ZAR"
+    }
+
+    response = requests.post(
+        "https://online.yoco.com/v1/charges/",
+        headers=headers,
+        json=payload
+    )
+
+    return {
+        "status": response.status_code,
+        "response": response.json()
+    }
 
 
 DB = 'leads.db'
