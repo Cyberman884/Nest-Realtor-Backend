@@ -37,6 +37,37 @@ def test_payment():
         "status": response.status_code,
         "response": response.json()
     }
+@app.post("/verify_payment")
+async def verify_payment(request: Request):
+    data = await request.json()
+    payment_id = data.get("payment_id")
+
+    if not payment_id:
+        return {"status": "error", "message": "Missing payment_id"}
+
+    secret_key = os.getenv("YOCO_SECRET_KEY")
+    if not secret_key:
+        return {"status": "error", "message": "Missing Yoco secret key"}
+
+    headers = {
+        "X-Auth-Secret-Key": secret_key,
+        "Content-Type": "application/json"
+    }
+
+    # Yoco API endpoint for verifying a charge
+    url = f"https://online.yoco.com/v1/charges/{payment_id}"
+
+    try:
+        response = requests.get(url, headers=headers)
+        yoco_response = response.json()
+
+        if response.status_code == 200 and yoco_response.get("status") == "successful":
+            return {"status": "success", "message": "Payment verified successfully", "details": yoco_response}
+        else:
+            return {"status": "failed", "message": "Payment verification failed", "details": yoco_response}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 DB = 'leads.db'
