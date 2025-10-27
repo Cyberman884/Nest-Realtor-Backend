@@ -5,6 +5,8 @@ import uvicorn, os, sqlite3, json
 
 app = FastAPI(title='Nest Realtor API')
 @app.get("/test")
+def test():
+    return {"message": "API is working fine"}
 # ---- paste below your existing imports and app = FastAPI(...) ----
 # required imports for auth/db/lead flow
 from fastapi import HTTPException, Depends, Header
