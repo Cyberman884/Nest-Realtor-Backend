@@ -6,3 +6,6 @@ httpx
 pydantic
 requests
 pysqlite3-binary
+pyjwt
+passlib[bcrypt]
+python-multipart
