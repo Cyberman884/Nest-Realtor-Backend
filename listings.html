@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Listings - Nest Realtor</title><link rel="stylesheet" href="assets/style.css"></head>
+<body>
+<header><h1>Nest Realtor</h1>
+<nav>
+<a href="index.html">Home</a><a href="listings.html">Listings</a><a href="demo.html">Demo</a><a href="pricing.html">Pricing</a><a href="affiliate.html">Affiliate</a><a href="testimonials.html">Testimonials</a><a href="about.html">About</a><a href="contact.html">Contact</a>
+</nav></header>
+<div class="container">
+<h2>Listings — Live & Estimated Commissions</h2>
+<p>Below are live leads (fetched from backend) — commission shown at 5%.</p>
+<table class="table" id="leads"><thead><tr><th>Title</th><th>Location</th><th>Price</th><th>Source</th><th>Commission (5%)</th><th>Link</th></tr></thead><tbody></tbody></table>
+<script>
+async function loadLeads(){
+  try{
+    const res = await fetch('/api/search');
+    const data = await res.json();
+    const tbody = document.querySelector('#leads tbody');
+    tbody.innerHTML = '';
+    data.leads.forEach(l=>{
+      const priceNum = parseInt(String(l.price).replace(/[^0-9]/g,''))||0;
+      const comm = priceNum? 'R ' + (Math.round(priceNum*0.05)).toLocaleString(): 'N/A';
+      const tr = `<tr><td>${l.title}</td><td>${l.location}</td><td>${l.price}</td><td>${l.source}</td><td>${comm}</td><td><a href="${l.url}" target="_blank">View</a></td></tr>`;
+      tbody.innerHTML += tr;
+    });
+  }catch(e){
+    console.error(e);
+  }
+}
+loadLeads();
+</script>
+</div>
+<footer class="footer"><div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div><div class="small"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="refund-policy.html">Refund Policy</a></div></footer>
+</body></html>

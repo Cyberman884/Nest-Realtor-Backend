@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Login - Nest Realtor</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+
+<body>
+  <header>
+    <h1>Nest Realtor</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="signup.html">Sign Up</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="contact.html">Contact</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <h2>Welcome Back</h2>
+    <form id="login-form">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="you@example.com" required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="********" required>
+
+      <button type="submit" class="btn">Log In</button>
+    </form>
+
+    <p id="message"></p>
+  </div>
+
+  <footer class="footer">
+    <div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div>
+    <div class="small">
+      <a href="terms.html">Terms</a> · 
+      <a href="privacy.html">Privacy</a> · 
+      <a href="refund-policy.html">Refund Policy</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch("https://nest-realtor-backend-17.onrender.com/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.access_token) {
+          // store token for dashboard requests
+          localStorage.setItem("token", data.access_token);
+          document.getElementById("message").textContent = "Login successful! Redirecting...";
+          document.getElementById("message").style.color = "green";
+
+          setTimeout(() => {
+            window.location.href = "dashboard.html";
+          }, 1000);
+        } else {
+          document.getElementById("message").textContent = data.detail || "Invalid login credentials.";
+          document.getElementById("message").style.color = "red";
+        }
+      } catch (err) {
+        document.getElementById("message").textContent = "Server error — please try again later.";
+        document.getElementById("message").style.color = "red";
+      }
+    });
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Login - Nest Realtor</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+
+<body>
+  <header>
+    <h1>Nest Realtor</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="signup.html">Sign Up</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="contact.html">Contact</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <h2>Welcome Back</h2>
+    <form id="login-form">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="you@example.com" required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="********" required>
+
+      <button type="submit" class="btn">Log In</button>
+    </form>
+
+    <p id="message"></p>
+  </div>
+
+  <footer class="footer">
+    <div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div>
+    <div class="small">
+      <a href="terms.html">Terms</a> · 
+      <a href="privacy.html">Privacy</a> · 
+      <a href="refund-policy.html">Refund Policy</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch("https://nest-realtor-backend-17.onrender.com/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.access_token) {
+          // store token for dashboard requests
+          localStorage.setItem("token", data.access_token);
+          document.getElementById("message").textContent = "Login successful! Redirecting...";
+          document.getElementById("message").style.color = "green";
+
+          setTimeout(() => {
+            window.location.href = "dashboard.html";
+          }, 1000);
+        } else {
+          document.getElementById("message").textContent = data.detail || "Invalid login credentials.";
+          document.getElementById("message").style.color = "red";
+        }
+      } catch (err) {
+        document.getElementById("message").textContent = "Server error — please try again later.";
+        document.getElementById("message").style.color = "red";
+      }
+    });
+  </script>
+</body>
+</html>

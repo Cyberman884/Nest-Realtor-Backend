@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard - Nest Realtor</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+    .lead-card {
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 10px 0;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    .lead-card h3 { margin: 0; font-size: 1.1rem; }
+    .lead-card p { margin: 4px 0; font-size: 0.9rem; color: #555; }
+    .btn-automate {
+      display: inline-block;
+      background: #007BFF;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-automate:hover {
+      background: #0056d4;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Nest Realtor</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="contact.html">Contact</a>
+      <a href="#" id="logout">Logout</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <h2>Your Dashboard</h2>
+    <p>Welcome to your Nest Realtor control center. View and manage your leads below.</p>
+
+    <button id="automate" class="btn-automate">🚀 Automate</button>
+    <p id="status"></p>
+
+    <h3>Your Leads</h3>
+    <div id="leads-list"></div>
+  </div>
+
+  <footer class="footer">
+    <div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div>
+    <div class="small">
+      <a href="terms.html">Terms</a> · 
+      <a href="privacy.html">Privacy</a> · 
+      <a href="refund-policy.html">Refund Policy</a>
+    </div>
+  </footer>
+
+  <script>
+    const API_URL = "https://nest-realtor-backend-17.onrender.com";
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      window.location.href = "login.html";
+    }
+
+    async function loadLeads() {
+      try {
+        const res = await fetch(`${API_URL}/leads`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+
+        const list = document.getElementById("leads-list");
+        list.innerHTML = "";
+
+        if (data.leads && data.leads.length > 0) {
+          data.leads.forEach(lead => {
+            const div = document.createElement("div");
+            div.classList.add("lead-card");
+            div.innerHTML = `
+              <h3>${lead.title}</h3>
+              <p><strong>Location:</strong> ${lead.location}</p>
+              <p><strong>Potential Commission:</strong> R${lead.potential_commission}</p>
+              <p><strong>Phone:</strong> ${lead.phone}</p>
+              <p><strong>Status:</strong> ${lead.status}</p>
+            `;
+            list.appendChild(div);
+          });
+        } else {
+          list.innerHTML = "<p>No leads available yet. Click 'Automate' to generate leads!</p>";
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById("status").textContent = "Error loading leads.";
+      }
+    }
+
+    document.getElementById("automate").addEventListener("click", async () => {
+      document.getElementById("status").textContent = "Generating leads...";
+      try {
+        const res = await fetch(`${API_URL}/automate`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" }
+
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById("status").textContent = `✅ ${data.created} new leads generated!`;
+          loadLeads();
+        } else {
+          document.getElementById("status").textContent = "Failed to generate leads.";
+        }
+      } catch (err) {
+        document.getElementById("status").textContent = "Server error while automating.";
+      }
+    });
+
+    document.getElementById("logout").addEventListener("click", () => {
+      localStorage.removeItem("token");
+      window.location.href = "login.html";
+    });
+
+    loadLeads();
+  </script>
+</body>
+</html>

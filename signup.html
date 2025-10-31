@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign Up - Nest Realtor</title><link rel="stylesheet" href="assets/style.css"></head>
+<body>
+<header><h1>Nest Realtor</h1>
+<nav>
+<a href="index.html">Home</a><a href="listings.html">Listings</a><a href="demo.html">Demo</a><a href="pricing.html">Pricing</a><a href="affiliate.html">Affiliate</a><a href="testimonials.html">Testimonials</a><a href="about.html">About</a><a href="contact.html">Contact</a>
+</nav></header>
+<div class="container">
+  <h2>Create Your Account</h2>
+  <form id="signup-form">
+    <label for="name">Full Name</label>
+    <input type="text" id="name" placeholder="John Doe" required>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="you@example.com" required>
+
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="********" required>
+
+    <button type="submit" class="btn">Sign Up</button>
+  </form>
+
+  <p id="message"></p>
+</div>
+
+<script>
+  document.getElementById("signup-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("name").value;
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const res = await fetch("https://your-render-app-url.onrender.com/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+
+      const data = await res.json();
+      document.getElementById("message").textContent = data.message || data.detail;
+      if (res.ok) {
+        document.getElementById("message").style.color = "green";
+      } else {
+        document.getElementById("message").style.color = "red";
+      }
+    } catch (err) {
+      document.getElementById("message").textContent = "Server error — please try again later.";
+      document.getElementById("message").style.color = "red";
+    }
+  });
+</script>
+
+</div>
+<footer class="footer"><div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div><div class="small"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="refund-policy.html">Refund Policy</a></div></footer>
+</body></html>
