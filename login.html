@@ -43,38 +43,33 @@
   </footer>
 
   <script>
-    document.getElementById("login-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value.trim();
 
-      try {
-        const res = await fetch("https://nest-realtor-backend-17.onrender.com/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
+    try {
+      const res = await fetch("https://nest-realtor-backend-22.onrender.com/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-        const data = await res.json();
+      const data = await res.json();
 
-        if (res.ok && data.access_token) {
-          // store token for dashboard requests
-          localStorage.setItem("token", data.access_token);
-          document.getElementById("message").textContent = "Login successful! Redirecting...";
-          document.getElementById("message").style.color = "green";
-
-          setTimeout(() => {
-            window.location.href = "dashboard.html";
-          }, 1000);
-        } else {
-          document.getElementById("message").textContent = data.detail || "Invalid login credentials.";
-          document.getElementById("message").style.color = "red";
-        }
-      } catch (err) {
-        document.getElementById("message").textContent = "Server error — please try again later.";
-        document.getElementById("message").style.color = "red";
+      if (res.ok && data.access_token) {
+        // ✅ Save the JWT token locally
+        localStorage.setItem("token", data.access_token);
+        alert("Login successful!");
+        window.location.href = "dashboard.html"; // redirect to dashboard
+      } else {
+        alert(data.detail || "Invalid credentials, please try again.");
       }
+    } catch (err) {
+      console.error("Login error:", err);
+      alert("Server error — please try again later.");
+    }
     });
   </script>
 </body>
@@ -131,7 +126,7 @@
       const password = document.getElementById("password").value;
 
       try {
-        const res = await fetch("https://nest-realtor-backend-17.onrender.com/login", {
+        const res = await fetch("https://nest-realtor-backend-22.onrender.com/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
@@ -156,7 +151,15 @@
         document.getElementById("message").textContent = "Server error — please try again later.";
         document.getElementById("message").style.color = "red";
       }
-    });
+    })<script>
+  // ✅ Auto redirect if already logged in
+  document.addEventListener("DOMContentLoaded", () => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      window.location.href = "dashboard.html";
+    }
+  });
+;
   </script>
 </body>
 </html>

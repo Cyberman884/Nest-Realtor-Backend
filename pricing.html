@@ -1,4 +1,4 @@
-<!doctype html>
+doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pricing - Nest Realtor</title><link rel="stylesheet" href="assets/style.css"></head>
@@ -90,8 +90,42 @@ document.getElementById('trial-btn').addEventListener('click',()=>{alert('To sta
             });
         }
       });
-    });
-  });
-</script>
+    });<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-</body></html>
+  // 🔥 Your Firebase config
+  const firebaseConfig = {
+    apiKey: "AIzaSyDc-e04hFYpZ8WDmvFcqBf1zbDfTekGpv8",
+    authDomain: "nest-realtor.firebaseapp.com",
+    projectId: "nest-realtor",
+    storageBucket: "nest-realtor.firebasestorage.app",
+    messagingSenderId: "555349990757",
+    appId: "1:555349990757:web:4208a19264dbefc5b6158c",
+    measurementId: "G-ZN2V4ZMCGP"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // 🎁 Handle free trial button
+  const trialBtn = document.querySelector("a[href='pricing.html']");
+
+  if (trialBtn) {
+    trialBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      
+      const email = prompt("Enter your email to start your free trial:");
+      const password = prompt("Create a password (min 6 characters):");
+      if (!email || !password) return alert("Please fill in both fields.");
+
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        alert("✅ Account created! Your 7-day trial has started.");
+        window.location.href = "dashboard.html"; // Redirect to dashboard
+      } catch (error) {
+        alert("❌ " + error.message);
+      }
+    });
+  } 
+</script>

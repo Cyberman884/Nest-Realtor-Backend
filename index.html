@@ -69,7 +69,78 @@
       });
     });
   });
+<!-- ✅ Yoco Payment Integration -->
+<script src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"></script>
+<script>
+  const yoco = new window.YocoSDK({
+    publicKey: "pk_live_f6f6c56e9AOGj3602194" // ✅ Your live key
+  });
+
+  // 💡 Connect this to your main trial or payment button
+  const button = document.getElementById("startTrialBtn");
+
+  if (button) {
+    button.addEventListener("click", () => {
+      yoco.showPopup({
+        amountInCents: 29900, // 💵 R299.00 example (change as needed)
+        currency: "ZAR",
+        name: "Nest Realtor Subscription",
+        description: "Monthly access to AI real estate lead generator",
+        callback: function (result) {
+          if (result.error) {
+            alert("❌ Payment failed: " + result.error.message);
+          } else {
+            alert("✅ Payment successful! Welcome to Nest Realtor 🚀");
+            // Redirect to dashboard or activate account
+            window.location.href = "dashboard.html";
+          }
+        },
+      });
+    });
+  } else {
+    console.error("⚠️ startTrialBtn not found — check your button ID.");
+  }<!-- ✅ Firebase Auth Integration -->
+<script type="module">
+  // Import Firebase SDKs
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+  // Your Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyDc-e04hFYpZ8WDmvFcqBf1zbDfTekGpv8",
+    authDomain: "nest-realtor.firebaseapp.com",
+    projectId: "nest-realtor",
+    storageBucket: "nest-realtor.firebasestorage.app",
+    messagingSenderId: "555349990757",
+    appId: "1:555349990757:web:4208a19264dbefc5b6158c",
+    measurementId: "G-ZN2V4ZMCGP"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // Attach listener to your “Free Trial” button
+  const trialBtn = document.querySelector("a[href='pricing.html']");
+
+  if (trialBtn) {
+    trialBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+
+      const email = prompt("Enter your email to start your free trial:");
+      const password = prompt("Set a password (min 6 chars):");
+
+      if (!email || !password) return alert("Email and password required.");
+
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        alert("✅ Free trial started for " + userCredential.user.email);
+        window.location.href = "dashboard.html"; // Redirect after signup
+      } catch (error) {
+        alert("❌ " + error.message);
+      }
+    });
+  }
 </script>
-
-
-</body></html>
+</body>
+</html>
