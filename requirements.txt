@@ -38,4 +38,4 @@ apscheduler==3.10.2
 loguru==0.7.0
 
 # Optional: Form handling (if using file uploads)
-python-multipart==0.0.6
+python-multipart>=0.0.7
