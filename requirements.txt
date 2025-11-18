@@ -1,40 +1,14 @@
-# Web framework
 fastapi==0.111.1
-
-# ASGI server
 uvicorn[standard]==0.23.1
-
-# Production server for Render
 gunicorn==21.2.0
-
-# HTTP requests (pure Python, no Rust)
 requests==2.32.0
-
-# HTML parsing / scraping
 beautifulsoup4==4.12.2
 lxml==4.9.3
-
-# Environment variables
 python-dotenv==1.0.0
-
-# Database
 sqlalchemy==2.0.44
 psycopg2-binary==2.9.7
-
-# Supabase client
-supabase==2.6.0
-
-# JSON / data validation
 pydantic==2.5.1
-
-# Optional: CORS for frontend calls
 fastapi-cors==0.0.3
-
-# Optional: Background scheduler
 apscheduler==3.10.2
-
-# Optional: Logging
 loguru==0.7.0
-
-# Optional: Form handling (if using file uploads)
 python-multipart>=0.0.7
