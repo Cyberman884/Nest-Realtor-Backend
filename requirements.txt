@@ -9,7 +9,7 @@ gunicorn==21.2.0
 
 # HTTP requests
 requests==2.32.0
-httpx==1.4.2
+httpx==0.28.1
 
 # HTML parsing / scraping
 beautifulsoup4==4.12.2
@@ -28,11 +28,14 @@ supabase==2.6.0
 # JSON / data validation
 pydantic==2.5.1
 
-# Optional: CORS
+# Optional: CORS for frontend calls
 fastapi-cors==0.0.3
 
-# Optional: Background tasks
+# Optional: Background scheduler
 apscheduler==3.10.2
 
 # Optional: Logging
 loguru==0.7.0
+
+# Optional: Form handling (if using file uploads)
+python-multipart==0.0.6
