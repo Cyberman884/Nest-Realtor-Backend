@@ -1,11 +1,8 @@
 fastapi
-uvicorn
-gunicorn
-jinja2
-httpx
-pydantic
+uvicorn[standard]
 requests
-pysqlite3-binary
-pyjwt
-passlib[bcrypt]
-python-multipart
+beautifulsoup4
+python-dotenv
+sqlalchemy
+psycopg2-binary
+supabase
