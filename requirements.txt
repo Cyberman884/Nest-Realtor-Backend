@@ -1,14 +1,27 @@
 fastapi==0.111.1
-uvicorn[standard]==0.23.1
-gunicorn==21.2.0
-requests==2.32.0
-beautifulsoup4==4.12.2
-lxml==4.9.3
-python-dotenv==1.0.0
-sqlalchemy==2.0.44
-psycopg2-binary==2.9.7
-pydantic==2.5.1
-fastapi-cors==0.0.3
-apscheduler==3.10.2
-loguru==0.7.0
-python-multipart>=0.0.7
+uvicorn==0.30.1
+
+# Fixes FastAPI upload dependency conflict
+python-multipart==0.0.9
+
+# Pydantic + Core versions that DO NOT require Rust to compile
+pydantic==2.7.4
+pydantic-core==2.18.2
+
+# Request + async tools
+httpx==0.28.1
+jinja2==3.1.6
+email-validator==2.3.0
+
+# Your existing backend packages (safe versions)
+supabase==2.0.4
+openai==1.51.0
+python-dotenv==1.0.1
+requests==2.32.3
+
+# If you use async SQL / DB
+asyncpg==0.29.0
+
+# For scraping (if needed)
+beautifulsoup4==4.12.3
+lxml==5.2.2
