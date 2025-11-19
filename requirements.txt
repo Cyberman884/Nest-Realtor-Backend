@@ -1,17 +1,25 @@
 fastapi==0.111.1
 uvicorn==0.30.1
+
 python-multipart==0.0.9
 
-pydantic==2.7.4
+# Pydantic (compatible with Python 3.13)
+pydantic==2.8.2
 
-httpx==0.24.1
+# DO NOT pin pydantic-core on Python 3.13 — let it auto-match
+# pydantic-core will auto-select the correct wheel
+
+# Supabase client compatible with new httpx + fastapi
+supabase==2.4.6
+
+# Works with supabase 2.4.6 and fastapi 0.111
+httpx==0.25.2
+
 requests==2.32.3
-
 jinja2==3.1.6
 email-validator==2.3.0
 python-dotenv==1.0.1
 
-supabase==2.3.0
-
+# Scraping
 beautifulsoup4==4.12.3
 lxml==5.2.2
