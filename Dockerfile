@@ -1,29 +1,21 @@
-# Use Python 3.11 slim image to ensure compatibility with pre-built wheels
+# Dockerfile
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for some Python packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    libffi-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install them
+# Copy requirements first (better caching)
 COPY requirements.txt .
+
+# Install dependencies
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all project files
+# Copy all files
 COPY . .
 
-# Expose port (matches your FastAPI/Uvicorn port)
+# Expose port (Render will use this)
 EXPOSE 8000
 
-# Start the app with Uvicorn using Gunicorn worker
+# Start the app with Uvicorn workers via Gunicorn
 CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
-
