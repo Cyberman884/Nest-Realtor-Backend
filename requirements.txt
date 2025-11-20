@@ -11,3 +11,4 @@ supabase
 cryptography
 sqlalchemy
 psycopg2-binary
+openai
