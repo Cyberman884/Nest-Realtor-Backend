@@ -1,9 +1,10 @@
 # database.py
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
+import json
 
 DATABASE_URL = (
     os.getenv('POSTGRES_URL')
@@ -70,7 +71,7 @@ class PaymentRecord(Base):
     user_id = Column(String, index=True)
     amount = Column(Integer)
     provider = Column(String)
-    extra_metadata = Column(Text)  # FIXED HERE
+    extra_metadata = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -81,3 +82,27 @@ class UserUsage(Base):
     used_searches = Column(Integer, default=0)
     credits = Column(Integer, default=0)
     last_updated = Column(DateTime, default=datetime.utcnow)
+
+
+class AutoLeadSetting(Base):
+    """
+    Stores per-user automation settings for scraping.
+    - filters: JSON string with filter params (location, beds, max_price, platform, etc.)
+    - interval_minutes: how often to run when enabled
+    - enabled: 1 or 0
+    """
+    __tablename__ = 'auto_lead_settings'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True)
+    name = Column(String, default="default")  # label for the rule
+    filters = Column(Text, default="{}")  # JSON string
+    interval_minutes = Column(Integer, default=360)  # default 6 hours
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_run = Column(DateTime, nullable=True)
+
+    def get_filters(self):
+        try:
+            return json.loads(self.filters or "{}")
+        except Exception:
+            return {}
