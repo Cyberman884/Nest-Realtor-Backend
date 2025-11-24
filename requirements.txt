@@ -7,8 +7,8 @@ beautifulsoup4
 lxml
 pydantic
 python-dotenv
-supabase
-cryptography
+openai
 sqlalchemy
 psycopg2-binary
-openai
+supabase
+cryptography
