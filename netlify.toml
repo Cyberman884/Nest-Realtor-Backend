@@ -1,0 +1,32 @@
+[build]
+  publish = "."
+  command = ""
+
+[[redirects]]
+  from = "/search-leads"
+  to = "https://nest-realtor-backend-13-b2h8.onrender.com/search-leads"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/generate-lead"
+  to = "https://nest-realtor-backend-13-b2h8.onrender.com/generate-lead"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/get-listings"
+  to = "https://nest-realtor-backend-13-b2h8.onrender.com/get-listings"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/sls"
+  to = "https://nest-realtor-backend-13-b2h8.onrender.com/sls"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
