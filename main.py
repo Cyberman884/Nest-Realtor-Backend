@@ -1,4 +1,4 @@
-# main.py — Fully Corrected Nest Realtor Backend
+# main.py — Full Nest Realtor Backend
 
 import os
 import json
@@ -25,13 +25,7 @@ title="Nest Realtor — Combined Backend (Property + SLS)",
 docs_url="/docs",
 redoc_url="/redoc"
 )
-app.add_middleware(
-CORSMiddleware,
-allow_origins=["*"],
-allow_credentials=True,
-allow_methods=["*"],
-allow_headers=["*"]
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 Base.metadata.create_all(bind=engine)
 
@@ -127,13 +121,7 @@ def save_buyer_results(user_id: str, results: list):
 db = SessionLocal()
 try:
 for r in results:
-entry = BuyerLead(
-user_id=user_id,
-title=r.get("title",""),
-price=r.get("price",""),
-link=r.get("link"),
-raw=json.dumps(r)
-)
+entry = BuyerLead(user_id=user_id, title=r.get("title",""), price=r.get("price",""), link=r.get("link"), raw=json.dumps(r))
 db.add(entry)
 db.commit()
 finally:
@@ -143,12 +131,7 @@ def save_seller_results(user_id: str, results: list):
 db = SessionLocal()
 try:
 for r in results:
-entry = SellerLead(
-user_id=user_id,
-title=r.get("title",""),
-link=r.get("link"),
-raw=json.dumps(r)
-)
+entry = SellerLead(user_id=user_id, title=r.get("title",""), link=r.get("link"), raw=json.dumps(r))
 db.add(entry)
 db.commit()
 finally:
@@ -158,13 +141,7 @@ def save_social_results(user_id: str, platform: str, results: list):
 db = SessionLocal()
 try:
 for r in results:
-entry = SocialLead(
-user_id=user_id,
-platform=platform,
-title=r.get("title",""),
-link=r.get("link"),
-raw=json.dumps(r)
-)
+entry = SocialLead(user_id=user_id, platform=platform, title=r.get("title",""), link=r.get("link"), raw=json.dumps(r))
 db.add(entry)
 db.commit()
 finally:
