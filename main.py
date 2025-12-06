@@ -26,7 +26,7 @@ except Exception:
 
 load_dotenv()
 
-API_TOKEN = os.getenv("API_TOKEN")  # must be set on Render
+API_TOKEN = os.getenv("API_TOKEN")  # must be set on Render (or leave blank to accept any token via Supabase verify)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -41,6 +41,7 @@ app = FastAPI(title="Nest Realtor Backend (SA)", version="1.0.0")
 
 # Config
 LIMIT = 5  # leads per refresh
+EXEMPT_PATHS = ["/", "/health"]
 
 # ----------------------
 # Helper responses & utils
@@ -60,33 +61,55 @@ def _get_token_from_headers(authorization: Optional[str], x_api_key: Optional[st
         return authorization.strip()
     return None
 
-def _validate_token(authorization: Optional[str] = Header(None), x_api_key: Optional[str] = Header(None, alias="x-api-key"), x_api_token: Optional[str] = Header(None, alias="x-api-token")) -> str:
+def _validate_token(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="x-api-key"),
+    x_api_token: Optional[str] = Header(None, alias="x-api-token"),
+) -> str:
+    """
+    Dependency to validate API token. Skips validation for EXEMPT_PATHS (root/health).
+    Returns a user identifier string (token or 'service') for DB usage.
+    """
+    # Don't require token for exempt paths (Render health checks)
+    path = request.url.path
+    if path in EXEMPT_PATHS:
+        return "anonymous"
+
     token = _get_token_from_headers(authorization, x_api_key, x_api_token)
     if not token:
         raise HTTPException(status_code=401, detail="Missing API token")
-    if API_TOKEN and token != API_TOKEN:
-        # if SUPABASE_URL is configured we could verify token there, but default compare to API_TOKEN
-        # attempt Supabase verify as fallback (best-effort)
-        if SUPABASE_URL:
-            try:
-                import requests
-                r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers={"Authorization": f"Bearer {token}"}, timeout=6)
-                if r.status_code == 200:
-                    data = r.json()
-                    uid = data.get("id")
-                    if uid:
-                        return uid
-            except Exception:
-                pass
+
+    # If API_TOKEN is configured, accept exact match
+    if API_TOKEN:
+        if token == API_TOKEN:
+            return "service"
+        # else try Supabase verification fallback if configured
+    if SUPABASE_URL:
+        try:
+            import requests as _requests
+            r = _requests.get(f"{SUPABASE_URL}/auth/v1/user", headers={"Authorization": f"Bearer {token}"}, timeout=6)
+            if r.status_code == 200:
+                data = r.json()
+                uid = data.get("id")
+                if uid:
+                    return uid
+        except Exception:
+            # swallow; will fall through to token fallback
+            pass
+
+    # If API_TOKEN is set and did not match, reject
+    if API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid API token")
-    # token valid; return identifier string for DB usage
-    return token if not API_TOKEN else ("service" if token == API_TOKEN else token)
+
+    # fallback: treat token as user id (dev mode)
+    return token
 
 # ----------------------
 # Background DB saves (no-op when DB missing)
 # ----------------------
 def _bg_save_buyer(user_id: str, results: list):
-    if not HAS_DB:
+    if not HAS_DB or not results:
         return
     db = SessionLocal()
     try:
@@ -104,7 +127,7 @@ def _bg_save_buyer(user_id: str, results: list):
         db.close()
 
 def _bg_save_seller(user_id: str, results: list):
-    if not HAS_DB:
+    if not HAS_DB or not results:
         return
     db = SessionLocal()
     try:
@@ -121,7 +144,7 @@ def _bg_save_seller(user_id: str, results: list):
         db.close()
 
 def _bg_save_social(user_id: str, platform: str, results: list):
-    if not HAS_DB:
+    if not HAS_DB or not results:
         return
     db = SessionLocal()
     try:
@@ -139,7 +162,7 @@ def _bg_save_social(user_id: str, platform: str, results: list):
         db.close()
 
 def _bg_save_universal(user_id: str, payload: dict):
-    if not HAS_DB:
+    if not HAS_DB or not payload:
         return
     db = SessionLocal()
     try:
@@ -163,14 +186,14 @@ async def _run_sync(fn, *args, **kwargs):
     return await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
 
 # ----------------------
-# Root & health
+# Root & health (public; allow GET and HEAD)
 # ----------------------
-@app.get("/")
+@app.api_route("/", methods=["GET","HEAD"])
 def root():
     return standard_response(data={"message":"Nest Realtor Backend Running"})
 
-@app.get("/health")
-def health_check(user_id: str = Depends(_validate_token)):
+@app.api_route("/health", methods=["GET","HEAD"])
+def health_check():
     return standard_response(data={"status":"ok","time": datetime.utcnow().isoformat()})
 
 # ----------------------
