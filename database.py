@@ -1,4 +1,4 @@
-# database.py
+# database.py (FINAL — auto-create)
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -7,23 +7,26 @@ import os
 import json
 
 DATABASE_URL = (
-    os.getenv('POSTGRES_URL')
-    or os.getenv('DATABASE_URL')
-    or os.getenv('SQLITE_URL')
-    or 'sqlite:///./nest_realtor.db'
+    os.getenv("POSTGRES_URL")
+    or os.getenv("DATABASE_URL")
+    or os.getenv("SQLITE_URL")
+    or "sqlite:///./nest_realtor.db"
 )
 
+# Support SQLite in local dev
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith('sqlite') else {}
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+# --------------- MODELS --------------- #
+
 class BuyerLead(Base):
-    __tablename__ = 'buyer_leads'
+    __tablename__ = "buyer_leads"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
     title = Column(String)
@@ -34,7 +37,7 @@ class BuyerLead(Base):
 
 
 class SellerLead(Base):
-    __tablename__ = 'seller_leads'
+    __tablename__ = "seller_leads"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
     title = Column(String)
@@ -44,7 +47,7 @@ class SellerLead(Base):
 
 
 class SocialLead(Base):
-    __tablename__ = 'social_leads'
+    __tablename__ = "social_leads"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
     platform = Column(String)
@@ -55,7 +58,7 @@ class SocialLead(Base):
 
 
 class UniversalScrape(Base):
-    __tablename__ = 'universal_scrapes'
+    __tablename__ = "universal_scrapes"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
     source_url = Column(String)
@@ -66,7 +69,7 @@ class UniversalScrape(Base):
 
 
 class PaymentRecord(Base):
-    __tablename__ = 'payments'
+    __tablename__ = "payments"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
     amount = Column(Integer)
@@ -76,7 +79,7 @@ class PaymentRecord(Base):
 
 
 class UserUsage(Base):
-    __tablename__ = 'user_usage'
+    __tablename__ = "user_usage"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, unique=True, index=True)
     used_searches = Column(Integer, default=0)
@@ -86,17 +89,15 @@ class UserUsage(Base):
 
 class AutoLeadSetting(Base):
     """
-    Stores per-user automation settings for scraping.
-    - filters: JSON string with filter params (location, beds, max_price, platform, etc.)
-    - interval_minutes: how often to run when enabled
-    - enabled: 1 or 0
+    Stores automation rules per user.
+    - filters: JSON string with filter params (location, etc.)
     """
-    __tablename__ = 'auto_lead_settings'
+    __tablename__ = "auto_lead_settings"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True)
-    name = Column(String, default="default")  # label for the rule
-    filters = Column(Text, default="{}")  # JSON string
-    interval_minutes = Column(Integer, default=360)  # default 6 hours
+    name = Column(String, default="default")
+    filters = Column(Text, default="{}")
+    interval_minutes = Column(Integer, default=360)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_run = Column(DateTime, nullable=True)
@@ -106,3 +107,12 @@ class AutoLeadSetting(Base):
             return json.loads(self.filters or "{}")
         except Exception:
             return {}
+
+
+# --------------- CREATE TABLES ON IMPORT --------------- #
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
+
+# Run on import (Fixes "no such table" forever)
+init_db()
