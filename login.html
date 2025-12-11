@@ -1,165 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Login - Nest Realtor</title>
-  <link rel="stylesheet" href="assets/style.css">
-</head>
-
-<body>
-  <header>
-    <h1>Nest Realtor</h1>
-    <nav>
-      <a href="index.html">Home</a>
-      <a href="signup.html">Sign Up</a>
-      <a href="pricing.html">Pricing</a>
-      <a href="contact.html">Contact</a>
-    </nav>
-  </header>
-
-  <div class="container">
-    <h2>Welcome Back</h2>
-    <form id="login-form">
-      <label for="email">Email</label>
-      <input type="email" id="email" placeholder="you@example.com" required>
-
-      <label for="password">Password</label>
-      <input type="password" id="password" placeholder="********" required>
-
-      <button type="submit" class="btn">Log In</button>
-    </form>
-
-    <p id="message"></p>
-  </div>
-
-  <footer class="footer">
-    <div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div>
-    <div class="small">
-      <a href="terms.html">Terms</a> · 
-      <a href="privacy.html">Privacy</a> · 
-      <a href="refund-policy.html">Refund Policy</a>
-    </div>
-  </footer>
-
-  <script>
-  document.getElementById("loginForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-
-    const email = document.getElementById("email").value.trim();
-    const password = document.getElementById("password").value.trim();
-
-    try {
-      const res = await fetch("https://nest-realtor-backend-22.onrender.com/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.access_token) {
-        // ✅ Save the JWT token locally
-        localStorage.setItem("token", data.access_token);
-        alert("Login successful!");
-        window.location.href = "dashboard.html"; // redirect to dashboard
-      } else {
-        alert(data.detail || "Invalid credentials, please try again.");
-      }
-    } catch (err) {
-      console.error("Login error:", err);
-      alert("Server error — please try again later.");
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nest Realtor — Login</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
     }
-    });
-  </script>
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Login - Nest Realtor</title>
-  <link rel="stylesheet" href="assets/style.css">
+    .login-container {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 380px;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-top: 1rem;
+      color: #555;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 20px;
+      background: #4c6ef5;
+      border: none;
+      color: white;
+      font-size: 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    button:hover { background: #3451cc; }
+    .note {
+      text-align: center;
+      margin-top: 1rem;
+    }
+    .note a {
+      color: #4c6ef5;
+      text-decoration: none;
+    }
+  </style>
 </head>
-
 <body>
-  <header>
-    <h1>Nest Realtor</h1>
-    <nav>
-      <a href="index.html">Home</a>
-      <a href="signup.html">Sign Up</a>
-      <a href="pricing.html">Pricing</a>
-      <a href="contact.html">Contact</a>
-    </nav>
-  </header>
-
-  <div class="container">
+  <div class="login-container">
     <h2>Welcome Back</h2>
     <form id="login-form">
-      <label for="email">Email</label>
-      <input type="email" id="email" placeholder="you@example.com" required>
+      <label>Email</label>
+      <input type="email" id="email" placeholder="Enter your email" required>
 
-      <label for="password">Password</label>
-      <input type="password" id="password" placeholder="********" required>
+      <label>Password</label>
+      <input type="password" id="password" placeholder="Enter your password" required>
 
-      <button type="submit" class="btn">Log In</button>
+      <button type="submit">Log In</button>
     </form>
 
-    <p id="message"></p>
+    <p class="note">
+      Don’t have an account? <a href="signup.html">Start your free trial</a>
+    </p>
   </div>
 
-  <footer class="footer">
-    <div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div>
-    <div class="small">
-      <a href="terms.html">Terms</a> · 
-      <a href="privacy.html">Privacy</a> · 
-      <a href="refund-policy.html">Refund Policy</a>
-    </div>
-  </footer>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  <script>
+    const SUPABASE_URL = "https://vhyviazazgrpmuujzpxu.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoeXZpYXphemdycG11dWp6cHh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5MDY3MjEsImV4cCI6MjA3ODQ4MjcyMX0.dhm1VSZEIgFLrEHi8ATfsJjfnm7H9CEpHiuCqDybqzg";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
 
-      try {
-        const res = await fetch("https://nest-realtor-backend-22.onrender.com/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-        const data = await res.json();
-
-        if (res.ok && data.access_token) {
-          // store token for dashboard requests
-          localStorage.setItem("token", data.access_token);
-          document.getElementById("message").textContent = "Login successful! Redirecting...";
-          document.getElementById("message").style.color = "green";
-
-          setTimeout(() => {
-            window.location.href = "dashboard.html";
-          }, 1000);
-        } else {
-          document.getElementById("message").textContent = data.detail || "Invalid login credentials.";
-          document.getElementById("message").style.color = "red";
-        }
-      } catch (err) {
-        document.getElementById("message").textContent = "Server error — please try again later.";
-        document.getElementById("message").style.color = "red";
+      if (error) {
+        alert("❌ " + error.message);
+      } else {
+        alert("✅ Login successful!");
+        window.location.href = "dashboard.html";
       }
-    })<script>
-  // ✅ Auto redirect if already logged in
-  document.addEventListener("DOMContentLoaded", () => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      window.location.href = "dashboard.html";
-    }
-  });
-;
+    });
   </script>
 </body>
 </html>

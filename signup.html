@@ -1,58 +1,105 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign Up - Nest Realtor</title><link rel="stylesheet" href="assets/style.css"></head>
-<body>
-<header><h1>Nest Realtor</h1>
-<nav>
-<a href="index.html">Home</a><a href="listings.html">Listings</a><a href="demo.html">Demo</a><a href="pricing.html">Pricing</a><a href="affiliate.html">Affiliate</a><a href="testimonials.html">Testimonials</a><a href="about.html">About</a><a href="contact.html">Contact</a>
-</nav></header>
-<div class="container">
-  <h2>Create Your Account</h2>
-  <form id="signup-form">
-    <label for="name">Full Name</label>
-    <input type="text" id="name" placeholder="John Doe" required>
-
-    <label for="email">Email</label>
-    <input type="email" id="email" placeholder="you@example.com" required>
-
-    <label for="password">Password</label>
-    <input type="password" id="password" placeholder="********" required>
-
-    <button type="submit" class="btn">Sign Up</button>
-  </form>
-
-  <p id="message"></p>
-</div>
-
-<script>
-  document.getElementById("signup-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = document.getElementById("name").value;
-    const email = document.getElementById("email").value;
-    const password = document.getElementById("password").value;
-
-    try {
-      const res = await fetch("https://your-render-app-url.onrender.com/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
-      });
-
-      const data = await res.json();
-      document.getElementById("message").textContent = data.message || data.detail;
-      if (res.ok) {
-        document.getElementById("message").style.color = "green";
-      } else {
-        document.getElementById("message").style.color = "red";
-      }
-    } catch (err) {
-      document.getElementById("message").textContent = "Server error — please try again later.";
-      document.getElementById("message").style.color = "red";
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nest Realtor — Sign Up</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
     }
-  });
-</script>
+    .signup-container {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 380px;
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+    label {
+      display: block;
+      margin-top: 1rem;
+      color: #555;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 20px;
+      background: #4c6ef5;
+      border: none;
+      color: white;
+      font-size: 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    button:hover { background: #3451cc; }
+    .note {
+      text-align: center;
+      margin-top: 1rem;
+    }
+    .note a {
+      color: #4c6ef5;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="signup-container">
+    <h2>Create Account</h2>
+    <form id="signup-form">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="Enter your email" required>
+      <label>Password</label>
+      <input type="password" id="password" placeholder="Create a password" required>
+      <button type="submit">Sign Up</button>
+    </form>
+    <p class="note">
+      Already have an account? <a href="login.html">Log In</a>
+    </p>
+  </div>
 
-</div>
-<footer class="footer"><div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div><div class="small"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="refund-policy.html">Refund Policy</a></div></footer>
-</body></html>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const SUPABASE_URL = "https://vhyviazazgrpmuujzpxu.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoeXZpYXphemdycG11dWp6cHh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5MDY3MjEsImV4cCI6MjA3ODQ4MjcyMX0.dhm1VSZEIgFLrEHi8ATfsJjfnm7H9CEpHiuCqDybqzg";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    document.getElementById("signup-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      const { data, error } = await supabase.auth.signUp({ email, password });
+
+      if (error) {
+        alert("❌ " + error.message);
+      } else {
+        alert("✅ Account created successfully! Please check your email to confirm your account.");
+        window.location.href = "dashboard.html";
+      }
+    });
+  </script>
+</body>
+</html>

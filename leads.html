@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leads — Nest Realtor</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+
+<body>
+  <header class="main-header">
+    <h1>💠 Leads</h1>
+    <nav>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="leads.html" class="active">Leads</a>
+      <a href="chat.html">Chat</a>
+      <a href="settings.html">Settings</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <h2>Search for Leads</h2>
+
+    <div class="form-grid">
+      <input id="leadLocation" placeholder="Location e.g. sandton" />
+      <select id="leadType">
+        <option value="buyers">Buyer Leads</option>
+        <option value="sellers">Seller Leads</option>
+      </select>
+      <button id="searchBtn" class="btn">Search</button>
+    </div>
+
+    <div id="leadResults" class="lead-results"></div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

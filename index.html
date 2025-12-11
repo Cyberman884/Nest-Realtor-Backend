@@ -1,146 +1,38 @@
-<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nest Realtor - Home</title><link rel="stylesheet" href="assets/style.css"></head>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Nest Realtor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
 <body>
-<header><h1>Nest Realtor</h1>
-<nav>
-<a href="index.html">Home</a><a href="listings.html">Listings</a><a href="demo.html">Demo</a><a href="pricing.html">Pricing</a><a href="affiliate.html">Affiliate</a><a href="testimonials.html">Testimonials</a><a href="about.html">About</a><a href="contact.html">Contact</a>
-</nav></header>
-<div class="container">
-<section class="hero"><h2>AI lead generation for realtors</h2><p>Automated property lead scraping, commission estimates, outreach automation and referral rewards — built for South African realtors.</p><p><a class="btn" href="pricing.html">Start Free Trial</a> <a class="btn" href="demo.html">View Demo</a></p></section>
-<section class="card"><h3>How it works</h3><ol><li>We scan property portals in real-time</li><li>We filter and verify leads</li><li>Deliver leads to your dashboard and Whatsapp/email</li></ol></section>
-<section class="card"><h3>Why agents love it</h3><p class="small">Potential commission shown per listing, instant contact buttons, and referral incentives.</p></section>
-</div>
-<footer class="footer"><div>© 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor</div><div class="small"><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="refund-policy.html">Refund Policy</a></div></footer>
-<!-- Buttons (use these exact ones or copy attributes into your existing buttons) -->
-<button data-plan="Starter" data-amount="179900">Get Starter — R1,799</button>
-<button data-plan="Pro"     data-amount="359900">Get Pro — R3,599</button>
-<button data-plan="Elite"   data-amount="549900">Get Elite — R5,499</button>
 
-<!-- Yoco SDK -->
-<script src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"></script>
+<header>
+    <h1>Nest Realtor</h1>
+    <nav>
+        <a href="index.html">Home</a>
+        <a href="listings.html">Listings</a>
+        <a href="demo.html">Demo</a>
+        <a href="pricing.html">Pricing</a>
+        <a href="affiliate.html">Affiliate</a>
+        <a href="testimonials.html">Testimonials</a>
+        <a href="about.html">About</a>
+        <a href="contact.html">Contact</a>
+    </nav>
+</header>
 
-<script>
-  // Initialize Yoco (test public key)
-  var yoco = new window.YocoSDK({
-    publicKey: "pk_test_8b38777b9AOGj3689cd4"
-  });
+<section class="hero">
+    <h2>AI-Powered Real Estate Leads</h2>
+    <p>Get instant buyer & seller leads from any country.</p>
+    <a class="cta" href="pricing.html">Start Free Trial</a>
+</section>
 
-  // Select all plan buttons
-  const planButtons = document.querySelectorAll("button[data-plan]");
+<footer>
+    © 2025 Bluesky Technologies (Pty) Ltd · Nest Realtor
+</footer>
 
-  planButtons.forEach(button => {
-    button.addEventListener("click", function() {
-      const amount = parseInt(button.getAttribute("data-amount")); // in cents
-      const planName = button.getAttribute("data-plan");
+<!-- The missing script -->
+<script src="assets/script.js"></script>
 
-      yoco.showPopup({
-        amountInCents: amount,
-        currency: "ZAR",
-        name: "Nest Realtor AI",
-        description: planName,
-        callback: function(result) {
-          if (result.error) {
-            alert("Payment failed: " + result.error.message);
-            return;
-          }
-
-          // Replace /test_payment with /pay in production if you use that route.
-          const backendUrl = "https://nest-realtor-backend-17.onrender.com/test_payment";
-
-          // Send token to backend (POST is better, but Yoco example uses callback token)
-          fetch(backendUrl + "?token=" + encodeURIComponent(result.id) + "&amount=" + amount + "&plan=" + encodeURIComponent(planName))
-            .then(res => res.json())
-            .then(data => {
-              // Adjust the success condition to match your backend response shape
-              if (data && (data.status === "success" || data.status === 200 || data.response?.status === "successful")) {
-                alert("Payment successful for " + planName + "! 🎉");
-                // TODO: redirect to dashboard or show activation UI
-              } else {
-                alert("Payment failed: " + JSON.stringify(data));
-              }
-            })
-            .catch(err => {
-              console.error(err);
-              alert("Network error sending token to backend");
-            });
-        }
-      });
-    });
-  });
-<!-- ✅ Yoco Payment Integration -->
-<script src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"></script>
-<script>
-  const yoco = new window.YocoSDK({
-    publicKey: "pk_live_f6f6c56e9AOGj3602194" // ✅ Your live key
-  });
-
-  // 💡 Connect this to your main trial or payment button
-  const button = document.getElementById("startTrialBtn");
-
-  if (button) {
-    button.addEventListener("click", () => {
-      yoco.showPopup({
-        amountInCents: 29900, // 💵 R299.00 example (change as needed)
-        currency: "ZAR",
-        name: "Nest Realtor Subscription",
-        description: "Monthly access to AI real estate lead generator",
-        callback: function (result) {
-          if (result.error) {
-            alert("❌ Payment failed: " + result.error.message);
-          } else {
-            alert("✅ Payment successful! Welcome to Nest Realtor 🚀");
-            // Redirect to dashboard or activate account
-            window.location.href = "dashboard.html";
-          }
-        },
-      });
-    });
-  } else {
-    console.error("⚠️ startTrialBtn not found — check your button ID.");
-  }<!-- ✅ Firebase Auth Integration -->
-<script type="module">
-  // Import Firebase SDKs
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-
-  // Your Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyDc-e04hFYpZ8WDmvFcqBf1zbDfTekGpv8",
-    authDomain: "nest-realtor.firebaseapp.com",
-    projectId: "nest-realtor",
-    storageBucket: "nest-realtor.firebasestorage.app",
-    messagingSenderId: "555349990757",
-    appId: "1:555349990757:web:4208a19264dbefc5b6158c",
-    measurementId: "G-ZN2V4ZMCGP"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-
-  // Attach listener to your “Free Trial” button
-  const trialBtn = document.querySelector("a[href='pricing.html']");
-
-  if (trialBtn) {
-    trialBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-
-      const email = prompt("Enter your email to start your free trial:");
-      const password = prompt("Set a password (min 6 chars):");
-
-      if (!email || !password) return alert("Email and password required.");
-
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        alert("✅ Free trial started for " + userCredential.user.email);
-        window.location.href = "dashboard.html"; // Redirect after signup
-      } catch (error) {
-        alert("❌ " + error.message);
-      }
-    });
-  }
-</script>
 </body>
 </html>

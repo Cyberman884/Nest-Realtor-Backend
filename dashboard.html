@@ -1,4 +1,4 @@
-<!<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -11,8 +11,8 @@
       background: #f8fafc;
       margin: 0;
       color: #1e293b;
+      display: none; /* Hidden until user is verified */
     }
-
     header {
       background: #0f172a;
       color: #fff;
@@ -21,12 +21,10 @@
       justify-content: space-between;
       align-items: center;
     }
-
     header h1 {
       font-size: 1.4rem;
       margin: 0;
     }
-
     header button {
       background: #38bdf8;
       border: none;
@@ -36,13 +34,11 @@
       cursor: pointer;
       font-weight: 500;
     }
-
     main {
       padding: 2rem;
       max-width: 1100px;
       margin: auto;
     }
-
     .section {
       background: #fff;
       border-radius: 12px;
@@ -50,14 +46,12 @@
       padding: 1.5rem;
       margin-bottom: 2rem;
     }
-
     .section h2 {
       margin-top: 0;
       color: #0f172a;
       font-size: 1.2rem;
       margin-bottom: 1rem;
     }
-
     #chatBox {
       height: 300px;
       overflow-y: auto;
@@ -67,14 +61,12 @@
       margin-bottom: 1rem;
       background: #f9fafb;
     }
-
     #userInput {
       width: 80%;
       padding: 0.7rem;
       border: 1px solid #cbd5e1;
       border-radius: 8px;
     }
-
     #sendBtn {
       padding: 0.7rem 1rem;
       border: none;
@@ -84,24 +76,20 @@
       cursor: pointer;
       font-weight: 500;
     }
-
     footer {
       text-align: center;
       padding: 1.5rem;
       color: #94a3b8;
       font-size: 0.9rem;
     }
-
     .message {
       margin-bottom: 0.8rem;
       line-height: 1.4;
     }
-
     .message.user {
       text-align: right;
       color: #0ea5e9;
     }
-
     .message.bot {
       text-align: left;
       color: #334155;
@@ -150,38 +138,56 @@
     &copy; <span id="year"></span> Nest Realtor. All rights reserved.
   </footer>
 
-  <script>
+  <!-- ✅ Supabase & Dashboard Scripts -->
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const SUPABASE_URL = "https://vhyviazazgrpmuujzpxu.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoeXZpYXphemdycG11dWp6cHh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5MDY3MjEsImV4cCI6MjA3ODQ4MjcyMX0.dhm1VSZEIgFLrEHi8ATfsJjfnm7H9CEpHiuCqDybqzg";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
     const API_URL = "https://nest-realtor-backend-22.onrender.com";
+
     document.getElementById("year").textContent = new Date().getFullYear();
 
-    // ✅ Auth Protection
-    const token = localStorage.getItem("token");
-    if (!token) {
-      alert("Please log in first.");
-      window.location.href = "login.html";
+    // ✅ Auth + Trial Check
+    async function checkAuthAndTrial() {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      const user = data.user;
+      document.body.style.display = "block";
+      document.getElementById("userEmail").textContent = "Logged in as: " + user.email;
+
+      // ✅ Check user usage
+      const { data: usage } = await supabase
+        .from("user_usage")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (!usage) {
+        await supabase.from("user_usage").insert([{ user_id: user.id, trial_count: 0, subscribed: false }]);
+      } else if (usage.trial_count >= 3 && !usage.subscribed) {
+        alert("⚠️ Your free trial is over. Please upgrade to continue using the dashboard.");
+        window.location.href = "pricing.html";
+      } else {
+        // Increment trial count
+        await supabase
+          .from("user_usage")
+          .update({ trial_count: usage.trial_count + 1 })
+          .eq("user_id", user.id);
+      }
     }
 
-    // ✅ Load Profile
-    fetch(`${API_URL}/me`, {
-      headers: { "Authorization": `Bearer ${token}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.email) {
-        document.getElementById("userEmail").textContent = "Logged in as: " + data.email;
-      } else {
-        localStorage.removeItem("token");
-        window.location.href = "login.html";
-      }
-    })
-    .catch(() => {
-      localStorage.removeItem("token");
-      window.location.href = "login.html";
-    });
+    await checkAuthAndTrial();
 
     // ✅ Logout
-    document.getElementById("logoutBtn").addEventListener("click", () => {
-      localStorage.removeItem("token");
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      await supabase.auth.signOut();
       window.location.href = "login.html";
     });
 
@@ -210,10 +216,7 @@
       try {
         const res = await fetch(`${API_URL}/chat`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text })
         });
 
@@ -240,10 +243,7 @@
       try {
         const res = await fetch(`${API_URL}/generate-leads`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query }),
         });
 
@@ -262,45 +262,9 @@
       } catch (err) {
         output.innerHTML = "<p>Server error — please try again later.</p>";
       }
-    });<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyDc-e04hFYpZ8WDmvFcqBf1zbDfTekGpv8",
-    authDomain: "nest-realtor.firebaseapp.com",
-    projectId: "nest-realtor",
-    storageBucket: "nest-realtor.firebasestorage.app",
-    messagingSenderId: "555349990757",
-    appId: "1:555349990757:web:4208a19264dbefc5b6158c",
-    measurementId: "G-ZN2V4ZMCGP"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-
-  // Check if user is logged in
-  onAuthStateChanged(auth, (user) => {
-    if (!user) {
-      // Not logged in → redirect
-      window.location.href = "index.html";
-    } else {
-      console.log("✅ Logged in as:", user.email);
-      document.body.style.display = "block"; // Show dashboard
-    }
-  });
-
-  // Optional logout button
-  const logoutBtn = document.getElementById("logoutBtn");
-  if (logoutBtn) {
-    logoutBtn.addEventListener("click", () => {
-      signOut(auth).then(() => {
-        alert("You’ve been signed out.");
-        window.location.href = "index.html";
-      });
     });
-  }
-
   </script>
+  <script src="assets/script.js"></script>
+
 </body>
 </html>
