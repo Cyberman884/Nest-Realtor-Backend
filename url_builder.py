@@ -1,27 +1,10 @@
-def build_urls(resolved):
-    location = resolved["location"].lower().replace(" ", "-")
-    max_price = resolved["budget"].get("max")
+from urllib.parse import quote_plus
 
-    urls = []
 
-    if "property24" in resolved["sources"]:
-        urls.append(
-            f"https://www.property24.com/for-sale/{location}/all-residential-properties"
-        )
-
-    if "privateproperty" in resolved["sources"]:
-        urls.append(
-            f"https://www.privateproperty.co.za/for-sale/{location}"
-        )
-
-    if "gumtree" in resolved["sources"]:
-        urls.append(
-            f"https://www.gumtree.co.za/s-houses-flats-for-sale/{location}"
-        )
-
-    if "facebook" in resolved["sources"]:
-        urls.append(
-            f"https://www.facebook.com/marketplace/{location}/propertyforsale"
-        )
-
-    return urls
+def build_search_url(query: str, country: str = "ZA") -> str:
+    """
+    Builds a Google-style search URL for real estate lead discovery.
+    """
+    base = "https://www.google.com/search?q="
+    full_query = f"{query} site:property site:realestate site:estate"
+    return base + quote_plus(full_query)

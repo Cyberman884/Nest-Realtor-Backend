@@ -1,25 +1,32 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from .url_builder import build_search_url
 
-from ai.openai_client import resolve_query
-from ai.url_builder import build_urls
+router = APIRouter(prefix="/ai", tags=["AI Leads"])
 
-router = APIRouter()
 
-class ResolveRequest(BaseModel):
-    prompt: str
+class LeadQuery(BaseModel):
+    query: str
+    country: str | None = "ZA"
 
-@router.post("/ai/resolve-query")
-def resolve_ai_query(body: ResolveRequest):
-    try:
-        resolved = resolve_query(body.prompt)
-        urls = build_urls(resolved)
 
-        return {
-            "success": True,
-            "resolved": resolved,
-            "urls": urls
-        }
+@router.post("/leads")
+async def resolve_leads(payload: LeadQuery):
+    """
+    Resolves an AI lead query into a search URL.
+    (Baseline working version)
+    """
+    if not payload.query:
+        raise HTTPException(status_code=400, detail="Query is required")
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    url = build_search_url(
+        query=payload.query,
+        country=payload.country or "ZA"
+    )
+
+    return {
+        "status": "ok",
+        "query": payload.query,
+        "country": payload.country,
+        "search_url": url
+    }

@@ -5,12 +5,12 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
-from ai.resolve_query import router as ai_router
 
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
+from ai.resolve_query import router as ai_router
 
 load_dotenv()
 
