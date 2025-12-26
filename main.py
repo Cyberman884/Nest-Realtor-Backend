@@ -15,6 +15,21 @@ from backend.ai.resolve_query import router as ai_router
 
 load_dotenv()
 
+# 1️⃣ Create app FIRST
+app = FastAPI(
+    title="Nest Realtor Backend",
+    version="1.0.0"
+)
+
+# 2️⃣ INCLUDE ROUTERS IMMEDIATELY AFTER
+app.include_router(ai_router)
+
+# 3️⃣ Then define routes
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 # --------------------------
 # Logging
 # --------------------------
