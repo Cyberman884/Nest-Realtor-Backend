@@ -1,87 +1,115 @@
-from datetime import datetime
-import random
+import os
+import re
+import requests
+from typing import Dict, List
 
-# -----------------------------
-# 1. INTERPRET QUERY (NO AI)
-# -----------------------------
-def interpret_query(text: str):
-    text = text.lower()
+# =========================
+# CONFIG
+# =========================
 
-    result = {
-        "location": None,
-        "property_type": None,
-        "intent": "buyer",
-        "max_price": None
+GOOGLE_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+
+
+# =========================
+# QUERY INTERPRETATION
+# =========================
+
+def interpret_query(query: str) -> Dict:
+    """
+    Very lightweight intent + location extractor.
+    This does NOT need to be perfect.
+    """
+    query = query.lower()
+
+    location_match = re.search(r"in ([a-zA-Z\s]+)", query)
+    location = location_match.group(1).strip() if location_match else None
+
+    intent = "agent"
+    if "seller" in query or "owner" in query:
+        intent = "seller"
+
+    return {
+        "raw_query": query,
+        "location": location,
+        "intent": intent
     }
 
-    if "rent" in text:
-        result["intent"] = "renter"
 
-    if "house" in text:
-        result["property_type"] = "house"
-    elif "apartment" in text or "flat" in text:
-        result["property_type"] = "apartment"
+# =========================
+# REAL LEAD ENGINE (GOOGLE PLACES)
+# =========================
 
-    areas = ["sandton", "rosebank", "fourways", "centurion", "menlyn"]
-    for area in areas:
-        if area in text:
-            result["location"] = area.title()
-
-    return result
-
-
-# -----------------------------
-# 2. TRY REAL DATA (PLACEHOLDER)
-# -----------------------------
-def try_real_leads(filters):
+def try_real_leads(filters: Dict) -> List[Dict]:
     """
-    Hook your scraper or API here later.
-    Returning empty list simulates failure.
+    Attempts to fetch REAL leads using Google Places API.
+    If anything fails, returns [] and allows fallback.
     """
-    return []
+
+    if not GOOGLE_API_KEY:
+        return []
+
+    location = filters.get("location")
+    if not location:
+        return []
+
+    query = f"real estate agent in {location}"
+
+    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+    params = {
+        "query": query,
+        "key": GOOGLE_API_KEY
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except Exception:
+        return []
+
+    leads = []
+
+    for place in data.get("results", [])[:5]:
+        leads.append({
+            "lead_type": "agent",
+            "name": place.get("name"),
+            "agency": place.get("name"),
+            "address": place.get("formatted_address"),
+            "source": "google-places"
+        })
+
+    return leads
 
 
-# -----------------------------
-# 3. AGENT LEAD GENERATOR
-# -----------------------------
-def generate_agent_lead(filters):
-    agencies = ["Prime Property", "Urban Realty", "Nest Homes", "Elite Estates"]
-    names = ["John Mokoena", "Sarah Daniels", "Lebo Nkosi", "Mark Williams"]
+# =========================
+# FALLBACK LEAD GENERATOR
+# =========================
+
+def generate_fallback_lead(filters: Dict) -> Dict:
+    """
+    Guaranteed non-empty fallback so the API never fails.
+    """
+    location = filters.get("location") or "your area"
 
     return {
         "lead_type": "agent",
-        "name": random.choice(names),
-        "agency": random.choice(agencies),
-        "phone": "+27 8" + str(random.randint(10000000, 99999999)),
-        "email": None,
-        "location": filters.get("location") or "South Africa",
-        "property_type": filters.get("property_type") or "Any",
-        "source": "Public listing patterns",
-        "generated_at": datetime.utcnow().isoformat()
+        "name": "Local Real Estate Agent",
+        "agency": f"{location.title()} Realty",
+        "address": location,
+        "source": "fallback"
     }
 
 
-# -----------------------------
-# 4. FALLBACK (NEVER FAILS)
-# -----------------------------
-def fallback_lead():
-    return {
-        "lead_type": "agent",
-        "name": "Verified Local Agent",
-        "agency": "Independent Realty",
-        "phone": "+27 81 000 0000",
-        "email": None,
-        "location": "Unknown",
-        "property_type": "Any",
-        "source": "System fallback",
-        "generated_at": datetime.utcnow().isoformat()
-    }
+# =========================
+# MAIN ENGINE ENTRY
+# =========================
 
+def generate_leads(query: str) -> Dict:
+    """
+    Main engine entry point.
+    This is what main.py should call.
+    """
 
-# -----------------------------
-# 5. MAIN ENGINE ENTRY
-# -----------------------------
-def run_engine(query: str):
     filters = interpret_query(query)
 
     leads = try_real_leads(filters)
@@ -89,23 +117,13 @@ def run_engine(query: str):
     if leads:
         return {
             "success": True,
-            "leads": leads,
-            "engine": "real-data"
+            "engine": "google-places",
+            "leads": leads
         }
 
-    # Guaranteed agent lead
-    agent_lead = generate_agent_lead(filters)
-
-    if agent_lead:
-        return {
-            "success": True,
-            "leads": [agent_lead],
-            "engine": "agent-generator"
-        }
-
-    # Absolute last resort
+    # fallback
     return {
         "success": True,
-        "leads": [fallback_lead()],
-        "engine": "fallback"
+        "engine": "fallback",
+        "leads": [generate_fallback_lead(filters)]
     }
