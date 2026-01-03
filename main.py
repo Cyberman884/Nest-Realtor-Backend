@@ -1,16 +1,15 @@
-# main.py — Nest Realtor Backend (stable)
+ # main.py — Nest Realtor Backend (working baseline)
 
 import os
 import logging
-from fastapi import FastAPI
+import requests
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# ✅ AI QUERY ROUTER (KEEP THIS)
-from backend.ai.resolve_query import router as ai_router
-
 # --------------------------------------------------
-# ENV + LOGGING
+# ENV & LOGGING
 # --------------------------------------------------
 load_dotenv()
 
@@ -33,19 +32,25 @@ app = FastAPI(
 )
 
 # --------------------------------------------------
-# ROUTERS
+# MODELS
 # --------------------------------------------------
-app.include_router(ai_router)
+class LeadRequest(BaseModel):
+    query: str
+    location: str | None = None
 
 # --------------------------------------------------
 # HEALTH
 # --------------------------------------------------
+@app.get("/")
+def root():
+    return {"status": "Nest Realtor backend running"}
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 # --------------------------------------------------
-# DEBUG — ENV CHECK (NO QUOTA USED)
+# DEBUG — CHECK ENV
 # --------------------------------------------------
 @app.get("/debug/google")
 def debug_google_key():
@@ -55,35 +60,90 @@ def debug_google_key():
     }
 
 # --------------------------------------------------
-# REAL GOOGLE PLACES LEAD TEST (OPTIONAL)
+# CORE LEAD ENGINE
 # --------------------------------------------------
-@app.get("/debug/google-live")
-def debug_google_live():
+def google_places_leads(query: str, location: str | None):
     """
-    This actually calls Google.
-    Use ONLY when testing.
+    Primary lead source using Google Places
     """
     if not GOOGLE_PLACES_API_KEY:
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Google Places API key missing"}
-        )
+        raise Exception("Google API key missing")
 
-    import requests
+    # Default to Sandton if no location given
+    location_map = {
+        "sandton": "-26.1076,28.0567",
+        "johannesburg": "-26.2041,28.0473",
+        "cape town": "-33.9249,18.4241",
+    }
+
+    coords = location_map.get(
+        (location or "sandton").lower(),
+        "-26.1076,28.0567"
+    )
 
     url = (
         "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        "?location=-26.1076,28.0567"
+        f"?location={coords}"
         "&radius=15000"
         "&type=real_estate_agency"
+        f"&keyword={query}"
         f"&key={GOOGLE_PLACES_API_KEY}"
     )
 
-    r = requests.get(url, timeout=15)
-    data = r.json()
+    response = requests.get(url, timeout=15)
+    data = response.json()
 
-    return {
-        "status": r.status_code,
-        "results_count": len(data.get("results", [])),
-        "sample": data.get("results", [])[:3]
-    }
+    if data.get("status") != "OK":
+        raise Exception(data.get("error_message", "Google Places failed"))
+
+    leads = []
+    for r in data.get("results", []):
+        leads.append({
+            "name": r.get("name"),
+            "address": r.get("vicinity"),
+            "rating": r.get("rating"),
+            "user_ratings_total": r.get("user_ratings_total"),
+            "source": "google_places"
+        })
+
+    return leads
+
+# --------------------------------------------------
+# LEADS ENDPOINT (THIS WAS MISSING)
+# --------------------------------------------------
+@app.post("/leads")
+def generate_leads(payload: LeadRequest):
+    try:
+        leads = google_places_leads(
+            query=payload.query,
+            location=payload.location
+        )
+
+        if not leads:
+            return {
+                "success": False,
+                "engine": "google_places",
+                "leads": [],
+                "error": "No leads found"
+            }
+
+        return {
+            "success": True,
+            "engine": "google_places",
+            "count": len(leads),
+            "leads": leads
+        }
+
+    except Exception as e:
+        logger.error(f"Lead generation failed: {e}")
+
+        # Safe fallback response (no crash)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "engine": "fallback",
+                "leads": [],
+                "error": str(e)
+            }
+        )
