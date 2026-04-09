@@ -1,7 +1,10 @@
+# lead_engine.py
+
 import os
 import re
 import requests
 from typing import Dict, List
+from filter_leads import filter_leads  # ✅ NEW IMPORT
 
 # =========================
 # CONFIG
@@ -15,10 +18,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 # =========================
 
 def interpret_query(query: str) -> Dict:
-    """
-    Very lightweight intent + location extractor.
-    This does NOT need to be perfect.
-    """
     query = query.lower()
 
     location_match = re.search(r"in ([a-zA-Z\s]+)", query)
@@ -40,10 +39,6 @@ def interpret_query(query: str) -> Dict:
 # =========================
 
 def try_real_leads(filters: Dict) -> List[Dict]:
-    """
-    Attempts to fetch REAL leads using Google Places API.
-    If anything fails, returns [] and allows fallback.
-    """
 
     if not GOOGLE_API_KEY:
         return []
@@ -67,18 +62,31 @@ def try_real_leads(filters: Dict) -> List[Dict]:
     except Exception:
         return []
 
-    leads = []
+    # =========================
+    # 🔥 FILTER PIPELINE
+    # =========================
 
-    for place in data.get("results", [])[:5]:
-        leads.append({
+    raw_places = data.get("results", [])
+
+    # Pass raw data into your filter system
+    clean_leads = filter_leads(raw_places)
+
+    # Format into your system structure
+    final_leads = []
+
+    for lead in clean_leads:
+        final_leads.append({
             "lead_type": "agent",
-            "name": place.get("name"),
-            "agency": place.get("name"),
-            "address": place.get("formatted_address"),
+            "name": lead.get("name"),
+            "agency": lead.get("name"),
+            "address": lead.get("address"),
+            "phone": lead.get("phone"),
+            "website": lead.get("website"),
+            "priority": lead.get("priority"),
             "source": "google-places"
         })
 
-    return leads
+    return final_leads
 
 
 # =========================
@@ -86,9 +94,6 @@ def try_real_leads(filters: Dict) -> List[Dict]:
 # =========================
 
 def generate_fallback_lead(filters: Dict) -> Dict:
-    """
-    Guaranteed non-empty fallback so the API never fails.
-    """
     location = filters.get("location") or "your area"
 
     return {
@@ -105,10 +110,6 @@ def generate_fallback_lead(filters: Dict) -> Dict:
 # =========================
 
 def generate_leads(query: str) -> Dict:
-    """
-    Main engine entry point.
-    This is what main.py should call.
-    """
 
     filters = interpret_query(query)
 
@@ -121,7 +122,6 @@ def generate_leads(query: str) -> Dict:
             "leads": leads
         }
 
-    # fallback
     return {
         "success": True,
         "engine": "fallback",
