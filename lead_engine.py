@@ -4,7 +4,7 @@ import os
 import re
 import requests
 from typing import Dict, List
-from filter_leads import filter_leads  # ✅ NEW IMPORT
+from filter_leads import filter_leads
 
 # =========================
 # CONFIG
@@ -71,16 +71,40 @@ def try_real_leads(filters: Dict) -> List[Dict]:
     # Pass raw data into your filter system
     clean_leads = filter_leads(raw_places)
 
-    # Format into your system structure
+    # =========================
+    # 🔥 ENRICH WITH PHONE NUMBERS
+    # =========================
+
     final_leads = []
 
     for lead in clean_leads:
+        place_id = lead.get("place_id")
+
+        phone = None
+
+        if place_id:
+            try:
+                details_url = "https://maps.googleapis.com/maps/api/place/details/json"
+                details_params = {
+                    "place_id": place_id,
+                    "fields": "formatted_phone_number",
+                    "key": GOOGLE_API_KEY
+                }
+
+                details_res = requests.get(details_url, params=details_params, timeout=10)
+                details_data = details_res.json()
+
+                phone = details_data.get("result", {}).get("formatted_phone_number")
+
+            except Exception:
+                phone = None
+
         final_leads.append({
             "lead_type": "agent",
             "name": lead.get("name"),
             "agency": lead.get("name"),
             "address": lead.get("address"),
-            "phone": lead.get("phone"),
+            "phone": phone,
             "website": lead.get("website"),
             "priority": lead.get("priority"),
             "source": "google-places"
