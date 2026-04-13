@@ -15,17 +15,13 @@ def filter_leads(raw_places):
 
         name = place.get("name")
         address = place.get("formatted_address") or place.get("vicinity")
-        phone = place.get("formatted_phone_number")
+        place_id = place.get("place_id")  # ✅ CRITICAL
         website = place.get("website")
         rating = place.get("rating")
         user_ratings_total = place.get("user_ratings_total")
 
-        # ❌ Skip if no contact info
-        if not phone and not website:
-            continue
-
-        # ❌ Skip duplicates (based on name + phone)
-        unique_key = f"{name}-{phone}"
+        # ❌ Skip duplicates (based on name only for now)
+        unique_key = f"{name}"
         if unique_key in seen:
             continue
         seen.add(unique_key)
@@ -33,8 +29,6 @@ def filter_leads(raw_places):
         # 🎯 Basic scoring
         score = 0
 
-        if phone:
-            score += 2
         if website:
             score += 2
         if rating and rating >= 4:
@@ -43,9 +37,9 @@ def filter_leads(raw_places):
             score += 1
 
         # 🏷️ Priority label
-        if score >= 5:
+        if score >= 4:
             priority = "High"
-        elif score >= 3:
+        elif score >= 2:
             priority = "Medium"
         else:
             priority = "Low"
@@ -54,7 +48,7 @@ def filter_leads(raw_places):
         lead = {
             "name": name,
             "address": address,
-            "phone": phone,
+            "place_id": place_id,  # 🔥 THIS FIXES PHONE NUMBERS
             "website": website,
             "rating": rating,
             "reviews": user_ratings_total,
