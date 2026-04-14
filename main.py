@@ -1,12 +1,14 @@
- # main.py — Nest Realtor Backend (working baseline)
+# main.py — FINAL CONNECTED VERSION
 
 import os
 import logging
-import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+# ✅ IMPORT YOUR REAL ENGINE
+from lead_engine import generate_leads as run_lead_engine
 
 # --------------------------------------------------
 # ENV & LOGGING
@@ -28,7 +30,7 @@ else:
 # --------------------------------------------------
 app = FastAPI(
     title="Nest Realtor Backend",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # --------------------------------------------------
@@ -36,14 +38,13 @@ app = FastAPI(
 # --------------------------------------------------
 class LeadRequest(BaseModel):
     query: str
-    location: str | None = None
 
 # --------------------------------------------------
 # HEALTH
 # --------------------------------------------------
 @app.get("/")
 def root():
-    return {"status": "Nest Realtor backend running"}
+    return {"status": "Nest Realtor backend running 🚀"}
 
 @app.get("/health")
 def health():
@@ -60,84 +61,22 @@ def debug_google_key():
     }
 
 # --------------------------------------------------
-# CORE LEAD ENGINE
-# --------------------------------------------------
-def google_places_leads(query: str, location: str | None):
-    """
-    Primary lead source using Google Places
-    """
-    if not GOOGLE_PLACES_API_KEY:
-        raise Exception("Google API key missing")
-
-    # Default to Sandton if no location given
-    location_map = {
-        "sandton": "-26.1076,28.0567",
-        "johannesburg": "-26.2041,28.0473",
-        "cape town": "-33.9249,18.4241",
-    }
-
-    coords = location_map.get(
-        (location or "sandton").lower(),
-        "-26.1076,28.0567"
-    )
-
-    url = (
-        "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        f"?location={coords}"
-        "&radius=15000"
-        "&type=real_estate_agency"
-        f"&keyword={query}"
-        f"&key={GOOGLE_PLACES_API_KEY}"
-    )
-
-    response = requests.get(url, timeout=15)
-    data = response.json()
-
-    if data.get("status") != "OK":
-        raise Exception(data.get("error_message", "Google Places failed"))
-
-    leads = []
-    for r in data.get("results", []):
-        leads.append({
-            "name": r.get("name"),
-            "address": r.get("vicinity"),
-            "rating": r.get("rating"),
-            "user_ratings_total": r.get("user_ratings_total"),
-            "source": "google_places"
-        })
-
-    return leads
-
-# --------------------------------------------------
-# LEADS ENDPOINT (THIS WAS MISSING)
+# 🚀 MAIN LEADS ENDPOINT (CONNECTED TO REAL ENGINE)
 # --------------------------------------------------
 @app.post("/leads")
-def generate_leads(payload: LeadRequest):
+def generate_leads_endpoint(payload: LeadRequest):
     try:
-        leads = google_places_leads(
-            query=payload.query,
-            location=payload.location
+        print("🔥 /leads endpoint triggered")
+
+        result = run_lead_engine(
+            query=payload.query
         )
 
-        if not leads:
-            return {
-                "success": False,
-                "engine": "google_places",
-                "leads": [],
-                "error": "No leads found"
-            }
-
-        return {
-            "success": True,
-            "engine": "google_places",
-            "count": len(leads),
-            "leads": leads
-        }
+        return result
 
     except Exception as e:
         logger.error(f"Lead generation failed: {e}")
 
-        # Safe fallback response (no crash)
         return JSONResponse(
             status_code=200,
             content={
