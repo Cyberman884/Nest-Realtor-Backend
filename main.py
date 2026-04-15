@@ -1,4 +1,4 @@
-# main.py — FINAL CONNECTED VERSION
+# main.py — FINAL WORKING VERSION
 
 import os
 import logging
@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# ✅ IMPORT YOUR REAL ENGINE
+# ✅ IMPORT YOUR LEAD ENGINE
 from lead_engine import generate_leads as run_lead_engine
 
 # --------------------------------------------------
@@ -18,19 +18,19 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nest-realtor")
 
-GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-if GOOGLE_PLACES_API_KEY:
-    logger.info("✅ Google Places API key loaded")
+if GOOGLE_API_KEY:
+    logger.info("✅ Google API key loaded")
 else:
-    logger.warning("⚠️ Google Places API key NOT found")
+    logger.warning("⚠️ Google API key NOT found")
 
 # --------------------------------------------------
 # APP
 # --------------------------------------------------
 app = FastAPI(
     title="Nest Realtor Backend",
-    version="2.0.0"
+    version="3.0.0"
 )
 
 # --------------------------------------------------
@@ -38,6 +38,7 @@ app = FastAPI(
 # --------------------------------------------------
 class LeadRequest(BaseModel):
     query: str
+    location: str   # ✅ FIXED: now required
 
 # --------------------------------------------------
 # HEALTH
@@ -51,25 +52,28 @@ def health():
     return {"status": "ok"}
 
 # --------------------------------------------------
-# DEBUG — CHECK ENV
+# DEBUG
 # --------------------------------------------------
 @app.get("/debug/google")
 def debug_google_key():
     return {
-        "key_present": bool(GOOGLE_PLACES_API_KEY),
-        "key_preview": GOOGLE_PLACES_API_KEY[:6] + "..." if GOOGLE_PLACES_API_KEY else None
+        "key_present": bool(GOOGLE_API_KEY),
+        "key_preview": GOOGLE_API_KEY[:6] + "..." if GOOGLE_API_KEY else None
     }
 
 # --------------------------------------------------
-# 🚀 MAIN LEADS ENDPOINT (CONNECTED TO REAL ENGINE)
+# 🚀 LEADS ENDPOINT
 # --------------------------------------------------
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
     try:
         print("🔥 /leads endpoint triggered")
+        print(f"📍 Query: {payload.query}")
+        print(f"📍 Location: {payload.location}")
 
         result = run_lead_engine(
-            query=payload.query
+            query=payload.query,
+            location=payload.location
         )
 
         return result
