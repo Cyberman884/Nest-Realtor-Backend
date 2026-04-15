@@ -4,7 +4,7 @@ import os
 import re
 import requests
 from typing import Dict, List
-from src.filter_leads import filter_leads
+from filter_leads import filter_leads
 
 # =========================
 # CONFIG
