@@ -7,18 +7,10 @@ from dotenv import load_dotenv
 
 from lead_engine import generate_leads as run_lead_engine
 
-# ✅ Supabase
-from supabase import create_client, Client
-
 # --------------------------------------------------
 # ENV
 # --------------------------------------------------
 load_dotenv()
-
-SUPABASE_URL = os.getenv("https://ffzttmizmmfmohlstlat.supabase.co")
-SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmenR0bWl6bW1mbW9obHN0bGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0NDYzNjYsImV4cCI6MjA5MjAyMjM2Nn0.uI9PwRJsN8wivXNRf3CR4HMC_oQno6afcj3y-juYf_c ")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nest-realtor")
@@ -26,7 +18,7 @@ logger = logging.getLogger("nest-realtor")
 # --------------------------------------------------
 # APP
 # --------------------------------------------------
-app = FastAPI(title="Nest Realtor Backend", version="5.0.0")
+app = FastAPI(title="Nest Realtor Backend", version="5.1.0")
 
 # --------------------------------------------------
 # MODEL
@@ -34,7 +26,7 @@ app = FastAPI(title="Nest Realtor Backend", version="5.0.0")
 class LeadRequest(BaseModel):
     query: str
     location: str
-    user_id: str  # REQUIRED
+    user_id: str  # still required for tracking later
 
 # --------------------------------------------------
 # ROOT
@@ -44,7 +36,7 @@ def root():
     return {"status": "Nest Realtor backend running 🚀"}
 
 # --------------------------------------------------
-# 🚀 LEADS ENDPOINT WITH FULL CONTROL
+# 🚀 LEADS ENDPOINT (DEMO MODE - NO DB REQUIRED)
 # --------------------------------------------------
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
@@ -52,52 +44,30 @@ def generate_leads_endpoint(payload: LeadRequest):
         print("🔥 /leads endpoint triggered")
 
         # ----------------------------------------
-        # 1. FETCH USER
+        # BASIC VALIDATION
         # ----------------------------------------
-        user_res = supabase.table("users").select("*").eq("id", payload.user_id).execute()
-
-        if not user_res.data:
+        if not payload.location:
             return {
                 "success": False,
-                "error": "User not found"
+                "error": "Location is required"
             }
 
-        user = user_res.data[0]
-
-        plan = user.get("plan", "free")
-        leads_used = user.get("leads_used", 0)
-
-        # ----------------------------------------
-        # 2. PLAN LIMITS (MATCH YOUR PRICING)
-        # ----------------------------------------
-        if plan == "free":
-            lead_limit = 2
-        elif plan == "starter":
-            lead_limit = 20
-        elif plan == "pro":
-            lead_limit = 50
-        elif plan == "elite":
-            lead_limit = 80
-        else:
-            lead_limit = 0
+        if not payload.user_id:
+            return {
+                "success": False,
+                "error": "Missing user_id"
+            }
 
         print(f"👤 User: {payload.user_id}")
-        print(f"📦 Plan: {plan}")
-        print(f"📊 Usage: {leads_used}/{lead_limit}")
+        print(f"📍 Location: {payload.location}")
 
         # ----------------------------------------
-        # 3. BLOCK IF LIMIT REACHED
+        # TEMP DEMO LIMIT (2 leads max)
         # ----------------------------------------
-        if leads_used >= lead_limit:
-            return {
-                "success": False,
-                "engine": "limit_block",
-                "leads": [],
-                "error": "You’ve reached your lead limit. Upgrade your plan to continue."
-            }
+        DEMO_LIMIT = 2
 
         # ----------------------------------------
-        # 4. GENERATE LEADS
+        # GENERATE LEADS
         # ----------------------------------------
         result = run_lead_engine(
             query=payload.query,
@@ -108,30 +78,17 @@ def generate_leads_endpoint(payload: LeadRequest):
             return result
 
         leads = result.get("leads", [])
+
+        # ----------------------------------------
+        # LIMIT RESULTS (DEMO MODE)
+        # ----------------------------------------
+        leads = leads[:DEMO_LIMIT]
         leads_count = len(leads)
 
-        # ----------------------------------------
-        # 5. PREVENT OVER-CONSUMPTION
-        # ----------------------------------------
-        remaining = lead_limit - leads_used
-
-        if leads_count > remaining:
-            leads = leads[:remaining]
-            leads_count = len(leads)
+        print(f"✅ Leads generated: {leads_count}")
 
         # ----------------------------------------
-        # 6. UPDATE USAGE
-        # ----------------------------------------
-        new_usage = leads_used + leads_count
-
-        supabase.table("users").update({
-            "leads_used": new_usage
-        }).eq("id", payload.user_id).execute()
-
-        print(f"✅ Updated usage: {new_usage}")
-
-        # ----------------------------------------
-        # 7. RETURN RESPONSE
+        # RESPONSE
         # ----------------------------------------
         return {
             "success": True,
@@ -139,9 +96,9 @@ def generate_leads_endpoint(payload: LeadRequest):
             "leads": leads,
             "count": leads_count,
             "usage": {
-                "used": new_usage,
-                "limit": lead_limit,
-                "remaining": lead_limit - new_usage
+                "used": leads_count,
+                "limit": DEMO_LIMIT,
+                "remaining": 0
             }
         }
 
