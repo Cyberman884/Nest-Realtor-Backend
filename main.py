@@ -2,6 +2,7 @@ import os
 import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -21,12 +22,23 @@ logger = logging.getLogger("nest-realtor")
 app = FastAPI(title="Nest Realtor Backend", version="5.1.0")
 
 # --------------------------------------------------
+# ✅ CORS FIX (THIS IS WHAT YOU WERE MISSING)
+# --------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all (safe for demo)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --------------------------------------------------
 # MODEL
 # --------------------------------------------------
 class LeadRequest(BaseModel):
     query: str
     location: str
-    user_id: str  # still required for tracking later
+    user_id: str
 
 # --------------------------------------------------
 # ROOT
@@ -36,7 +48,7 @@ def root():
     return {"status": "Nest Realtor backend running 🚀"}
 
 # --------------------------------------------------
-# 🚀 LEADS ENDPOINT (DEMO MODE - NO DB REQUIRED)
+# 🚀 LEADS ENDPOINT
 # --------------------------------------------------
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
@@ -44,7 +56,7 @@ def generate_leads_endpoint(payload: LeadRequest):
         print("🔥 /leads endpoint triggered")
 
         # ----------------------------------------
-        # BASIC VALIDATION
+        # VALIDATION
         # ----------------------------------------
         if not payload.location:
             return {
@@ -62,7 +74,7 @@ def generate_leads_endpoint(payload: LeadRequest):
         print(f"📍 Location: {payload.location}")
 
         # ----------------------------------------
-        # TEMP DEMO LIMIT (2 leads max)
+        # DEMO LIMIT
         # ----------------------------------------
         DEMO_LIMIT = 2
 
@@ -77,12 +89,7 @@ def generate_leads_endpoint(payload: LeadRequest):
         if not result.get("success"):
             return result
 
-        leads = result.get("leads", [])
-
-        # ----------------------------------------
-        # LIMIT RESULTS (DEMO MODE)
-        # ----------------------------------------
-        leads = leads[:DEMO_LIMIT]
+        leads = result.get("leads", [])[:DEMO_LIMIT]
         leads_count = len(leads)
 
         print(f"✅ Leads generated: {leads_count}")
