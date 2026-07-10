@@ -1,7 +1,14 @@
+import os
 import requests
 from typing import Dict, List
+
 from filter_leads import filter_leads
-import os
+from marketplace_urls import (
+    GUMTREE_URLS,
+    FACEBOOK_MARKETPLACE_URLS
+)
+from gumtree import search_gumtree
+from facebook_marketplace import get_facebook_marketplace
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
@@ -77,13 +84,63 @@ def generate_leads(query: str, location: str) -> Dict:
             }
 
             leads.append(lead)
+                    # ----------------------------------
+        # GUMTREE
+        # ----------------------------------
 
-        return {
-            "success": True,
-            "engine": "google_places",
-            "count": len(leads),
-            "leads": leads
-        }
+        try:
+            gumtree_url = GUMTREE_URLS.get(location.lower())
+
+            if gumtree_url:
+                gumtree_results = search_gumtree(
+                    location=location,
+                    max_items=20
+                )
+
+                leads.extend(gumtree_results.get("leads", []))
+
+        except Exception as e:
+            print("❌ Gumtree Error:", str(e))
+
+
+        # ----------------------------------
+        # FACEBOOK MARKETPLACE
+        # ----------------------------------
+
+        try:
+            marketplace_url = FACEBOOK_MARKETPLACE_URLS.get(location.lower())
+
+            if marketplace_url:
+                marketplace_results = get_facebook_marketplace(
+                    marketplace_url,
+                    max_items=20
+                )
+
+                leads.extend(marketplace_results)
+
+        except Exception as e:
+            print("❌ Facebook Marketplace Error:", str(e))
+
+
+        # ----------------------------------
+        # FILTER LEADS
+        # ----------------------------------
+
+        try:
+            leads = filter_leads(leads)
+        except Exception as e:
+            print("⚠️ Filter Error:", str(e))
+return {
+    "success": True,
+    "engine": "multi_source",
+    "count": len(leads),
+    "sources": [
+        "google_places",
+        "gumtree",
+        "facebook_marketplace"
+    ],
+    "leads": leads
+}
 
     except Exception as e:
         print("❌ GOOGLE ERROR:", str(e))
