@@ -6,7 +6,7 @@ APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 client = ApifyClient(APIFY_TOKEN)
 
 
-def search_gumtree(location: str, max_items: int = 10):
+def search_gumtree(url: str, max_items: int = 10):
     """
     Search Gumtree South Africa for private property sellers.
     """

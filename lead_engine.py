@@ -93,7 +93,7 @@ def generate_leads(query: str, location: str) -> Dict:
 
             if gumtree_url:
                 gumtree_results = search_gumtree(
-                    location=location,
+                    gumtree_url,
                     max_items=20
                 )
 
@@ -121,7 +121,6 @@ def generate_leads(query: str, location: str) -> Dict:
         except Exception as e:
             print("❌ Facebook Marketplace Error:", str(e))
 
-
         # ----------------------------------
         # FILTER LEADS
         # ----------------------------------
@@ -130,17 +129,18 @@ def generate_leads(query: str, location: str) -> Dict:
             leads = filter_leads(leads)
         except Exception as e:
             print("⚠️ Filter Error:", str(e))
-return {
-    "success": True,
-    "engine": "multi_source",
-    "count": len(leads),
-    "sources": [
-        "google_places",
-        "gumtree",
-        "facebook_marketplace"
-    ],
-    "leads": leads
-}
+
+        return {
+            "success": True,
+            "engine": "multi_source",
+            "count": len(leads),
+            "sources": [
+                "google_places",
+                "gumtree",
+                "facebook_marketplace"
+            ],
+            "leads": leads
+        }
 
     except Exception as e:
         print("❌ GOOGLE ERROR:", str(e))
