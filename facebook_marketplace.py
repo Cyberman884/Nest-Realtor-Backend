@@ -10,6 +10,7 @@ ACTOR_ID = "U5DUNxhH3qKt5PnCf"
 
 def get_facebook_marketplace(url, max_items=20):
     try:
+
         run_input = {
             "startUrls": [
                 {
@@ -22,9 +23,11 @@ def get_facebook_marketplace(url, max_items=20):
 
         run = client.actor(ACTOR_ID).call(run_input=run_input)
 
+        dataset = client.dataset(run.default_dataset_id)
+
         results = []
 
-        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        for item in dataset.iterate_items():
 
             lead = {
                 "title": item.get("title"),
@@ -41,5 +44,5 @@ def get_facebook_marketplace(url, max_items=20):
         return results
 
     except Exception as e:
-        print("Facebook Marketplace Error:", e)
+        print("Facebook Marketplace Error:", str(e))
         return []

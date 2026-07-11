@@ -11,12 +11,10 @@ def search_gumtree(url: str, max_items: int = 10):
     Search Gumtree South Africa for private property sellers.
     """
 
-    search_url = f"https://www.gumtree.co.za/s-houses-flats-for-sale/{location.lower()}/"
-
     run_input = {
         "startUrls": [
             {
-                "url": search_url
+                "url": url
             }
         ],
         "maxItems": max_items,
@@ -32,7 +30,7 @@ def search_gumtree(url: str, max_items: int = 10):
 
         run = client.actor("JziY9YnglkuoWMDsq").call(run_input=run_input)
 
-        dataset = client.dataset(run["defaultDatasetId"])
+        dataset = client.dataset(run.default_dataset_id)
 
         leads = []
 
