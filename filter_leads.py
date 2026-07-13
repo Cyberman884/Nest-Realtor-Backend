@@ -1,42 +1,94 @@
 # filter_leads.py
 
 def filter_leads(raw_places):
-    """
-    Takes raw Google Places results and returns clean, usable leads
-    """
 
     if not raw_places:
         return []
 
     filtered = []
-    seen = set()  # for duplicate removal
+    seen = set()
 
     for place in raw_places:
 
-        name = place.get("name")
-        address = place.get("formatted_address") or place.get("vicinity")
-        place_id = place.get("place_id")  # ✅ CRITICAL
-        website = place.get("website")
-        rating = place.get("rating")
-        user_ratings_total = place.get("user_ratings_total")
+        source = place.get("source", "unknown")
 
-        # ❌ Skip duplicates (based on name only for now)
-        unique_key = f"{name}"
+        # -------------------------
+        # GOOGLE PLACES
+        # -------------------------
+
+        if source == "google_places":
+
+            name = place.get("name")
+            address = place.get("address") or place.get("formatted_address") or place.get("vicinity")
+            website = place.get("website")
+            place_id = place.get("place_id")
+            rating = place.get("rating")
+            reviews = place.get("user_ratings_total") or place.get("reviews")
+
+        # -------------------------
+        # GUMTREE
+        # -------------------------
+
+        elif source == "gumtree":
+
+            name = place.get("title")
+            address = place.get("location")
+            website = place.get("url")
+            place_id = None
+            rating = None
+            reviews = None
+
+        # -------------------------
+        # FACEBOOK
+        # -------------------------
+
+        elif source == "facebook_marketplace":
+
+            name = place.get("title")
+            address = place.get("location")
+            website = place.get("url")
+            place_id = None
+            rating = None
+            reviews = None
+
+        # -------------------------
+        # UNKNOWN
+        # -------------------------
+
+        else:
+
+            name = place.get("name") or place.get("title")
+            address = (
+                place.get("address")
+                or place.get("formatted_address")
+                or place.get("location")
+            )
+            website = place.get("website") or place.get("url")
+            place_id = place.get("place_id")
+            rating = place.get("rating")
+            reviews = place.get("user_ratings_total")
+
+        if not name:
+            continue
+
+        unique_key = f"{source}-{name}"
+
         if unique_key in seen:
             continue
+
         seen.add(unique_key)
 
-        # 🎯 Basic scoring
         score = 0
 
         if website:
             score += 2
+
         if rating and rating >= 4:
             score += 1
-        if user_ratings_total and user_ratings_total > 10:
+
+        if reviews and reviews > 10:
             score += 1
 
-        # 🏷️ Priority label
         if score >= 4:
             priority = "High"
         elif score >= 2:
@@ -44,21 +96,26 @@ def filter_leads(raw_places):
         else:
             priority = "Low"
 
-        # ✅ Clean lead object
-        lead = {
+        filtered.append({
             "name": name,
             "address": address,
-            "place_id": place_id,  # 🔥 THIS FIXES PHONE NUMBERS
+            "place_id": place_id,
             "website": website,
             "rating": rating,
-            "reviews": user_ratings_total,
-            "priority": priority
-        }
+            "reviews": reviews,
+            "priority": priority,
+            "source": source
+        })
 
-        filtered.append(lead)
+    priority_order = {
+        "High": 3,
+        "Medium": 2,
+        "Low": 1
+    }
 
-    # 🔥 Sort by priority (High → Low)
-    priority_order = {"High": 3, "Medium": 2, "Low": 1}
-    filtered.sort(key=lambda x: priority_order[x["priority"]], reverse=True)
+    filtered.sort(
+        key=lambda x: priority_order.get(x["priority"], 1),
+        reverse=True
+    )
 
     return filtered
