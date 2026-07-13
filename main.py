@@ -62,12 +62,15 @@ def root():
 # --------------------------------------------------
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
+
     try:
+
         print("🔥 /leads endpoint triggered")
 
         # ----------------------------------------
         # VALIDATION
         # ----------------------------------------
+
         if not payload.location:
             return {
                 "success": False,
@@ -81,16 +84,19 @@ def generate_leads_endpoint(payload: LeadRequest):
             }
 
         print(f"👤 User: {payload.user_id}")
+        print(f"📍 Query: {payload.query}")
         print(f"📍 Location: {payload.location}")
 
         # ----------------------------------------
         # DEMO LIMIT
         # ----------------------------------------
+
         DEMO_LIMIT = 2
 
         # ----------------------------------------
-        # GENERATE LEADS
+        # RUN LEAD ENGINE
         # ----------------------------------------
+
         result = run_lead_engine(
             query=payload.query,
             location=payload.location
@@ -99,27 +105,42 @@ def generate_leads_endpoint(payload: LeadRequest):
         if not result.get("success"):
             return result
 
-        leads = result.get("leads", [])[:DEMO_LIMIT]
+        leads = result.get("leads", [])
+
+        leads = leads[:DEMO_LIMIT]
+
         leads_count = len(leads)
 
         print(f"✅ Leads generated: {leads_count}")
 
+        print("📊 Sources:", result.get("sources"))
+
         # ----------------------------------------
         # RESPONSE
         # ----------------------------------------
+
         return {
             "success": True,
-            "engine": "google_places",
-            "leads": leads,
+            "engine": result.get("engine", "multi_source"),
+            "sources": result.get(
+                "sources",
+                [
+                    "google_places",
+                    "gumtree",
+                    "facebook_marketplace"
+                ]
+            ),
             "count": leads_count,
+            "leads": leads,
             "usage": {
                 "used": leads_count,
                 "limit": DEMO_LIMIT,
-                "remaining": 0
+                "remaining": max(DEMO_LIMIT - leads_count, 0)
             }
         }
 
     except Exception as e:
+
         logger.error(f"❌ Error: {e}")
 
         return JSONResponse(
@@ -127,7 +148,10 @@ def generate_leads_endpoint(payload: LeadRequest):
             content={
                 "success": False,
                 "engine": "error",
+                "sources": [],
+                "count": 0,
                 "leads": [],
                 "error": str(e)
             }
         )
+
