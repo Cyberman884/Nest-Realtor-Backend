@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import Dict, List
+from typing import Dict
 
 from filter_leads import filter_leads
 from marketplace_urls import (
@@ -16,6 +16,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 def get_place_details(place_id):
     try:
         url = "https://maps.googleapis.com/maps/api/place/details/json"
+
         params = {
             "place_id": place_id,
             "fields": "name,formatted_phone_number,website",
@@ -29,6 +30,7 @@ def get_place_details(place_id):
 
         if data.get("status") == "OK":
             result = data.get("result", {})
+
             return {
                 "phone": result.get("formatted_phone_number"),
                 "website": result.get("website")
@@ -42,7 +44,11 @@ def get_place_details(place_id):
 
 
 def generate_leads(query: str, location: str) -> Dict:
+
     try:
+
+        print("🚀 Starting Google Places")
+
         url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 
         params = {
@@ -50,12 +56,9 @@ def generate_leads(query: str, location: str) -> Dict:
             "key": GOOGLE_API_KEY
         }
 
-        print("🚀 Sending request to Google Places:", params)
-
         response = requests.get(url, params=params)
 
-        print("✅ Status:", response.status_code)
-        print("📦 Raw Response:", response.text)
+        print("✅ Google Status:", response.status_code)
 
         data = response.json()
 
@@ -67,6 +70,7 @@ def generate_leads(query: str, location: str) -> Dict:
         leads = []
 
         for place in results[:20]:
+
             place_id = place.get("place_id")
 
             print("📍 Fetching details for:", place.get("name"))
@@ -84,51 +88,80 @@ def generate_leads(query: str, location: str) -> Dict:
             }
 
             leads.append(lead)
-                    # ----------------------------------
+
+        # -------------------------------
         # GUMTREE
-        # ----------------------------------
+        # -------------------------------
+
+        print("🚀 Starting Gumtree")
+
+        gumtree_url = GUMTREE_URLS.get(location.lower())
+
+        print("Gumtree URL:", gumtree_url)
 
         try:
-            gumtree_url = GUMTREE_URLS.get(location.lower())
 
             if gumtree_url:
+
                 gumtree_results = search_gumtree(
                     gumtree_url,
                     max_items=20
                 )
 
+                print("✅ Gumtree Results:", gumtree_results.get("count"))
+
                 leads.extend(gumtree_results.get("leads", []))
 
+            else:
+
+                print("⚠️ No Gumtree URL found for", location)
+
         except Exception as e:
+
             print("❌ Gumtree Error:", str(e))
 
-
-        # ----------------------------------
+        # -------------------------------
         # FACEBOOK MARKETPLACE
-        # ----------------------------------
+        # -------------------------------
+
+        print("🚀 Starting Facebook Marketplace")
+
+        marketplace_url = FACEBOOK_MARKETPLACE_URLS.get(location.lower())
+
+        print("Marketplace URL:", marketplace_url)
 
         try:
-            marketplace_url = FACEBOOK_MARKETPLACE_URLS.get(location.lower())
 
             if marketplace_url:
+
                 marketplace_results = get_facebook_marketplace(
                     marketplace_url,
                     max_items=20
                 )
 
+                print("✅ Facebook Results:", len(marketplace_results))
+
                 leads.extend(marketplace_results)
 
+            else:
+
+                print("⚠️ No Facebook Marketplace URL found for", location)
+
         except Exception as e:
+
             print("❌ Facebook Marketplace Error:", str(e))
 
-        # ----------------------------------
-        # FILTER LEADS
-        # ----------------------------------
+        # -------------------------------
+        # FILTER
+        # -------------------------------
 
         try:
             leads = filter_leads(leads)
+
         except Exception as e:
             print("⚠️ Filter Error:", str(e))
+
+        print("✅ Returning", len(leads), "total leads")
 
         return {
             "success": True,
@@ -143,6 +176,7 @@ def generate_leads(query: str, location: str) -> Dict:
         }
 
     except Exception as e:
+
         print("❌ GOOGLE ERROR:", str(e))
 
         return {
