@@ -166,7 +166,7 @@ def generate_leads(query: str, location: str) -> Dict:
         "leads": leads
     }
 
-except Exception as e:
+    except Exception as e:
 
     print("❌ Lead Engine Error:", str(e))
 
