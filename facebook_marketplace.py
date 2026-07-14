@@ -8,7 +8,7 @@ client = ApifyClient(APIFY_TOKEN)
 ACTOR_ID = "U5DUNxhH3qKt5PnCf"
 
 
-def get_facebook_marketplace(url, max_items=20):
+def get_facebook_marketplace(location, max_items=20):
     try:
 
         run_input = {

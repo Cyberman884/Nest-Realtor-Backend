@@ -5,32 +5,58 @@ APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 
 client = ApifyClient(APIFY_TOKEN)
 
+ACTOR_ID = "JziY9YnglkuoWMDsq"
 
-def search_gumtree(url: str, max_items: int = 10):
+
+def build_gumtree_url(location: str):
     """
-    Search Gumtree South Africa for private property sellers.
+    Build Gumtree URL dynamically.
     """
+
+    location = location.strip().lower()
+
+    # Nationwide search
+    if location in ["south africa", "sa", "rsa", "all"]:
+        return "https://www.gumtree.co.za/s-houses-flats-for-sale/v1c9074p1"
+
+    # Convert city names to Gumtree slug
+    slug = (
+        location.replace(" ", "-")
+                .replace("_", "-")
+    )
+
+    return (
+        f"https://www.gumtree.co.za/"
+        f"s-houses-flats-for-sale/{slug}/"
+    )
+
+
+def search_gumtree(location: str, max_items: int = 20):
+
+    search_url = build_gumtree_url(location)
+
+    print("🚀 Starting Gumtree")
+    print("Search URL:", search_url)
 
     run_input = {
         "startUrls": [
             {
-                "url": url
+                "url": search_url
             }
         ],
         "maxItems": max_items,
         "includeListingDetails": True,
         "cookies": [],
         "proxy": {
-            "useApifyProxy": True,
-            "apifyProxyGroups": ["RESIDENTIAL"]
+            "useApifyProxy": True
         }
     }
 
     try:
 
-        run = client.actor("JziY9YnglkuoWMDsq").call(run_input=run_input)
+        run = client.actor(ACTOR_ID).call(run_input=run_input)
 
-        dataset = client.dataset(run.default_dataset_id)
+        dataset = client.dataset(run["defaultDatasetId"])
 
         leads = []
 
@@ -42,14 +68,16 @@ def search_gumtree(url: str, max_items: int = 10):
                 or ""
             )
 
-            if str(seller_type).lower() not in [
+            seller_type = str(seller_type).lower()
+
+            if seller_type not in [
                 "private",
                 "owner",
                 "private seller"
             ]:
                 continue
 
-            leads.append({
+            lead = {
                 "title": item.get("title"),
                 "price": item.get("price"),
                 "currency": item.get("currency"),
@@ -59,7 +87,11 @@ def search_gumtree(url: str, max_items: int = 10):
                 "posted_date": item.get("postedDate"),
                 "url": item.get("link"),
                 "source": "gumtree"
-            })
+            }
+
+            leads.append(lead)
+
+        print(f"✅ Gumtree returned {len(leads)} leads")
 
         return {
             "success": True,
@@ -70,7 +102,7 @@ def search_gumtree(url: str, max_items: int = 10):
 
     except Exception as e:
 
-        print("GUMTREE ERROR:", str(e))
+        print("❌ Gumtree Error:", str(e))
 
         return {
             "success": False,
