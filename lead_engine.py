@@ -165,20 +165,3 @@ def generate_leads(query: str, location: str) -> Dict:
         ],
         "leads": leads
     }
-
-    except Exception as e:
-
-    print("❌ Lead Engine Error:", str(e))
-
-    return {
-        "success": False,
-        "engine": "fallback",
-        "count": 0,
-        "sources": [
-            "google_places",
-            "gumtree",
-            "facebook_marketplace"
-        ],
-        "leads": [],
-        "error": str(e)
-    }
