@@ -41,7 +41,10 @@ def get_facebook_marketplace(location, max_items=20):
 
         run = client.actor(ACTOR_ID).call(run_input=run_input)
 
-        dataset = client.dataset(run["defaultDatasetId"])
+        print("RUN TYPE:", type(run))
+        print("RUN:", run)
+
+        dataset = client.dataset(run.default_dataset_id)
 
         leads = []
 

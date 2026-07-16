@@ -58,14 +58,17 @@ def search_gumtree(location, max_items=20):
     }
 
     try:
+    run = client.actor(ACTOR_ID).call(run_input=run_input)
 
-        run = client.actor(ACTOR_ID).call(run_input=run_input)
+    print("RUN TYPE:", type(run))
+    print("RUN:", run)
 
-        dataset = client.dataset(run["defaultDatasetId"])
+    dataset = client.dataset(run.default_dataset_id)
 
-        leads = []
+    leads = []
 
-        for item in dataset.iterate_items():
+    for item in dataset.iterate_items():
+
 
             lead = {
                 "title": item.get("title"),
