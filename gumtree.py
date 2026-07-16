@@ -9,47 +9,52 @@ ACTOR_ID = "JziY9YnglkuoWMDsq"
 
 
 def build_gumtree_url(location: str):
-    """
-    Build Gumtree URL dynamically.
-    """
 
     location = location.strip().lower()
 
-    # Nationwide search
-    if location in ["south africa", "sa", "rsa", "all"]:
+    cities = {
+        "johannesburg": "johannesburg",
+        "pretoria": "pretoria-tshwane",
+        "cape town": "cape-town",
+        "durban": "durban-city",
+        "east london": "east-london",
+        "port elizabeth": "port-elizabeth",
+        "gqeberha": "port-elizabeth",
+        "bloemfontein": "bloemfontein",
+        "polokwane": "polokwane-pietersburg",
+        "nelspruit": "nelspruit",
+        "mbombela": "nelspruit",
+        "kimberley": "kimberley"
+    }
+
+    if location in ["south africa", "sa", "rsa", "all", ""]:
         return "https://www.gumtree.co.za/s-houses-flats-for-sale/v1c9074p1"
 
-    # Convert city names to Gumtree slug
-    slug = (
-        location.replace(" ", "-")
-                .replace("_", "-")
-    )
+    slug = cities.get(location)
 
-    return (
-        f"https://www.gumtree.co.za/"
-        f"s-houses-flats-for-sale/{slug}/"
-    )
+    if slug:
+        return f"https://www.gumtree.co.za/s-houses-flats-for-sale/{slug}/v1c9074p1"
+
+    slug = location.replace(" ", "-")
+
+    return f"https://www.gumtree.co.za/s-houses-flats-for-sale/{slug}/v1c9074p1"
 
 
-def search_gumtree(location: str, max_items: int = 20):
+def search_gumtree(location, max_items=20):
 
-    search_url = build_gumtree_url(location)
+    url = build_gumtree_url(location)
 
     print("🚀 Starting Gumtree")
-    print("Search URL:", search_url)
+    print("URL:", url)
 
     run_input = {
         "startUrls": [
             {
-                "url": search_url
+                "url": url
             }
         ],
         "maxItems": max_items,
-        "includeListingDetails": True,
-        "cookies": [],
-        "proxy": {
-            "useApifyProxy": True
-        }
+        "includeListingDetails": True
     }
 
     try:
@@ -62,28 +67,13 @@ def search_gumtree(location: str, max_items: int = 20):
 
         for item in dataset.iterate_items():
 
-            seller_type = (
-                item.get("sellerType")
-                or item.get("seller_type")
-                or ""
-            )
-
-            seller_type = str(seller_type).lower()
-
-            if seller_type not in [
-                "private",
-                "owner",
-                "private seller"
-            ]:
-                continue
-
             lead = {
                 "title": item.get("title"),
                 "price": item.get("price"),
                 "currency": item.get("currency"),
                 "location": item.get("location"),
                 "category": item.get("category"),
-                "seller_type": seller_type,
+                "seller_type": item.get("sellerType"),
                 "posted_date": item.get("postedDate"),
                 "url": item.get("link"),
                 "source": "gumtree"
@@ -91,7 +81,7 @@ def search_gumtree(location: str, max_items: int = 20):
 
             leads.append(lead)
 
-        print(f"✅ Gumtree returned {len(leads)} leads")
+        print(f"✅ Gumtree returned {len(leads)} listings")
 
         return {
             "success": True,

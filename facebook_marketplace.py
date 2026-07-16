@@ -8,8 +8,26 @@ client = ApifyClient(APIFY_TOKEN)
 ACTOR_ID = "U5DUNxhH3qKt5PnCf"
 
 
+def build_marketplace_url(location):
+
+    location = location.lower().strip()
+
+    if location in ["south africa", "sa", "rsa", "all", ""]:
+        return "https://www.facebook.com/marketplace/southafrica/propertyforsale"
+
+    slug = location.replace(" ", "")
+
+    return f"https://www.facebook.com/marketplace/{slug}/propertyforsale"
+
+
 def get_facebook_marketplace(location, max_items=20):
+
     try:
+
+        url = build_marketplace_url(location)
+
+        print("🚀 Starting Facebook Marketplace")
+        print("URL:", url)
 
         run_input = {
             "startUrls": [
@@ -23,26 +41,29 @@ def get_facebook_marketplace(location, max_items=20):
 
         run = client.actor(ACTOR_ID).call(run_input=run_input)
 
-        dataset = client.dataset(run.default_dataset_id)
+        dataset = client.dataset(run["defaultDatasetId"])
 
-        results = []
+        leads = []
 
         for item in dataset.iterate_items():
 
             lead = {
-                "title": item.get("title"),
-                "price": item.get("price"),
-                "location": item.get("location"),
-                "seller": item.get("sellerName"),
-                "url": item.get("url"),
-                "image": item.get("image"),
+                "title": item.get("marketplace_listing_title"),
+                "price": item.get("listing_price.formatted_amount"),
+                "url": item.get("listingUrl"),
+                "facebook_url": item.get("facebookUrl"),
+                "image": item.get("primary_listing_photo.photo_image_url"),
                 "source": "facebook_marketplace"
             }
 
-            results.append(lead)
+            leads.append(lead)
 
-        return results
+        print(f"✅ Facebook returned {len(leads)} listings")
+
+        return leads
 
     except Exception as e:
-        print("Facebook Marketplace Error:", str(e))
+
+        print("❌ Facebook Marketplace Error:", str(e))
+
         return []
