@@ -58,12 +58,12 @@ def search_gumtree(location, max_items=20):
     }
 
     try:
-    run = client.actor(ACTOR_ID).call(run_input=run_input)
+        run = client.actor(ACTOR_ID).call(run_input=run_input)
 
-    print("RUN TYPE:", type(run))
-    print("RUN:", run)
+        print("RUN TYPE:", type(run))
+        print("RUN:", run)
 
-    dataset = client.dataset(run.default_dataset_id)
+        dataset = client.dataset(run.default_dataset_id)
 
     leads = []
 
