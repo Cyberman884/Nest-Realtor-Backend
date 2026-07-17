@@ -65,9 +65,9 @@ def search_gumtree(location, max_items=20):
 
         dataset = client.dataset(run.default_dataset_id)
 
-    leads = []
+        leads = []
 
-    for item in dataset.iterate_items():
+        for item in dataset.iterate_items():
 
 
             lead = {
