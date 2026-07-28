@@ -46,17 +46,9 @@ def get_facebook_marketplace(location, max_items=20):
 
         dataset = client.dataset(run.default_dataset_id)
 
-        # DEBUG
-        items = list(dataset.iterate_items())
-
-        print("Facebook items:", len(items))
-
-        for item in items[:2]:
-            print(item)
-
         leads = []
 
-        for item in items:
+        for item in dataset.iterate_items():
 
             lead = {
                 "title": item.get("marketplace_listing_title"),
