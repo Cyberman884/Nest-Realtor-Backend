@@ -153,6 +153,7 @@ def generate_leads_endpoint(payload: LeadRequest):
                 "leads": [],
                 "error": str(e)
             }
+         )
 # --------------------------------------------------
 # 💳 YOCO CHECKOUT
 # --------------------------------------------------
