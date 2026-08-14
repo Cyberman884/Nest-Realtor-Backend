@@ -153,5 +153,93 @@ def generate_leads_endpoint(payload: LeadRequest):
                 "leads": [],
                 "error": str(e)
             }
+# --------------------------------------------------
+# 💳 YOCO CHECKOUT
+# --------------------------------------------------
+
+@app.post("/create_checkout")
+async def create_checkout(payload: dict):
+
+    try:
+        import requests
+
+        secret_key = os.getenv("YOCO_SECRET_KEY")
+
+        if not secret_key:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "YOCO_SECRET_KEY is missing"
+                }
+            )
+
+        amount = int(payload.get("amount", 0))
+        plan = payload.get("plan", "Nest Realtor")
+
+        if amount <= 0:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Invalid payment amount"
+                }
+            )
+
+        checkout_data = {
+            "amount": amount,
+            "currency": "ZAR",
+            "successUrl": payload.get(
+                "success_url",
+                "https://nest-realtor.netlify.app/dashboard.html"
+            ),
+            "cancelUrl": payload.get(
+                "cancel_url",
+                "https://nest-realtor.netlify.app/pricing.html"
+            ),
+            "metadata": {
+                "plan": plan
+            }
+        }
+
+        response = requests.post(
+            "https://payments.yoco.com/api/checkouts",
+            headers={
+                "Authorization": f"Bearer {secret_key}",
+                "Content-Type": "application/json"
+            },
+            json=checkout_data,
+            timeout=30
+        )
+
+        print("YOCO STATUS:", response.status_code)
+        print("YOCO RESPONSE:", response.text)
+
+        if response.status_code >= 400:
+            return JSONResponse(
+                status_code=response.status_code,
+                content={
+                    "success": False,
+                    "error": response.text
+                }
+            )
+
+        data = response.json()
+
+        return {
+            "success": True,
+            "redirectUrl": data.get("redirectUrl")
+        }
+
+    except Exception as e:
+
+        logger.error(f"❌ Yoco checkout error: {e}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
         )
 
