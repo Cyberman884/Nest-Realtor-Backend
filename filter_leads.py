@@ -1,6 +1,6 @@
 from pathlib import Path
-
-code = '''from datetime import datetime, timezone
+p = Path("/mnt/data/filter_leads_backend_compatible.py")
+p.write_text("""from datetime import datetime, timezone
 import re
 
 LONG_LISTING_DAYS = 90
@@ -15,24 +15,13 @@ def parse_date(value):
         return None
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
-    text = str(value).strip()
-    formats = [
-        "%Y-%m-%d",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%d/%m/%Y",
-        "%d-%m-%Y",
-    ]
-
-    for fmt in formats:
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%SZ",
+                "%Y-%m-%dT%H:%M:%S.%fZ", "%d/%m/%Y", "%d-%m-%Y"):
         try:
-            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(str(value).strip(), fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             pass
-
     return None
 
 def days_listed(posted_date):
@@ -46,31 +35,16 @@ def normalize_price(value):
         return None
     if isinstance(value, (int, float)):
         return float(value)
-
-    text = str(value).replace(",", "").replace("R", "").strip()
-    match = re.search(r"\\d+(?:\\.\\d+)?", text)
-
-    if not match:
-        return None
-
-    try:
-        return float(match.group(0))
-    except ValueError:
-        return None
+    match = re.search(r"\\d+(?:\\.\\d+)?", str(value).replace(",", "").replace("R", ""))
+    return float(match.group(0)) if match else None
 
 def detect_price_reduction(lead):
-    current = normalize_price(
-        lead.get("price") or lead.get("current_price")
-    )
-
+    current = normalize_price(lead.get("price") or lead.get("current_price"))
     previous = normalize_price(
-        lead.get("previous_price")
-        or lead.get("old_price")
-        or lead.get("original_price")
-        or lead.get("price_before")
+        lead.get("previous_price") or lead.get("old_price")
+        or lead.get("original_price") or lead.get("price_before")
         or lead.get("last_price")
     )
-
     result = {
         "detected": False,
         "previous_price": previous,
@@ -78,166 +52,147 @@ def detect_price_reduction(lead):
         "reduction_amount": None,
         "reduction_percent": None,
     }
-
-    # Never claim a price reduction without historical price data.
-    if (
-        previous is None
-        or current is None
-        or previous <= 0
-        or current <= 0
-        or current >= previous
-    ):
+    if previous is None or current is None or previous <= 0 or current <= 0 or current >= previous:
         return result
-
     amount = previous - current
-    percent = (amount / previous) * 100
-
     result.update({
         "detected": True,
         "reduction_amount": round(amount, 2),
-        "reduction_percent": round(percent, 2),
+        "reduction_percent": round((amount / previous) * 100, 2),
     })
-
     return result
 
-def listing_identity(lead):
-    url = str(lead.get("url") or "").strip().lower()
-
-    if url:
-        return f"url:{url}"
-
-    title = str(
-        lead.get("title") or lead.get("name") or ""
-    ).strip().lower()
-
-    location = str(
-        lead.get("location") or lead.get("address") or ""
-    ).strip().lower()
-
-    return f"listing:{title}|{location}"
-
-def filter_leads(leads):
-    """
-    Convert raw listings into Nest Seller Opportunity Signals.
-
-    Adds:
-      - opportunity_type
-      - opportunity_score
-      - priority
-      - days_listed
-      - signals
-      - reasoning
-
-    Price reduction is only reported when a previous price
-    has actually been supplied by the collection/history layer.
-    """
-
-    if not leads:
+def filter_leads(raw_places):
+    if not raw_places:
         return []
 
-    unique = []
+    filtered = []
     seen = set()
 
-    for lead in leads:
-        identity = listing_identity(lead)
+    for place in raw_places:
+        source = place.get("source", "unknown")
 
-        if identity in seen:
+        if source == "google_places":
+            name = place.get("name")
+            address = place.get("address") or place.get("formatted_address") or place.get("vicinity")
+            website = place.get("website")
+            place_id = place.get("place_id")
+            rating = place.get("rating")
+            reviews = place.get("user_ratings_total") or place.get("reviews")
+
+        elif source == "gumtree":
+            name = place.get("title")
+            address = place.get("location")
+            website = place.get("url")
+            place_id = rating = reviews = None
+
+        elif source == "facebook_marketplace":
+            name = place.get("title")
+            address = place.get("location")
+            website = place.get("url")
+            place_id = rating = reviews = None
+
+        else:
+            name = place.get("name") or place.get("title")
+            address = place.get("address") or place.get("formatted_address") or place.get("location")
+            website = place.get("website") or place.get("url")
+            place_id = place.get("place_id")
+            rating = place.get("rating")
+            reviews = place.get("user_ratings_total")
+
+        if not name:
             continue
 
-        seen.add(identity)
-        unique.append(dict(lead))
+        unique_key = f"{source}-{name}"
+        if unique_key in seen:
+            continue
+        seen.add(unique_key)
 
-    opportunities = []
-
-    for lead in unique:
         score = 0
+        if website:
+            score += 2
+        if rating and rating >= 4:
+            score += 1
+        if reviews and reviews > 10:
+            score += 1
+
+        age = days_listed(
+            place.get("posted_date")
+            or place.get("date_posted")
+            or place.get("created_at")
+        )
+
+        long_listing = age is not None and age >= LONG_LISTING_DAYS
+        price_reduction = detect_price_reduction(place)
+
+        opportunity_score = 0
         reasoning = []
 
-        posted_date = (
-            lead.get("posted_date")
-            or lead.get("date_posted")
-            or lead.get("created_at")
-        )
-
-        age = days_listed(posted_date)
-
-        # LONG TIME ON MARKET
-        long_listing = (
-            age is not None and age >= LONG_LISTING_DAYS
-        )
-
         if long_listing:
-            score += SCORES["long_listing"]
-
+            opportunity_score += SCORES["long_listing"]
             reasoning.append({
                 "signal": "Long time on market",
-                "detail": (
-                    f"Listing has been observed for "
-                    f"approximately {age} days."
-                ),
-                "evidence": {
-                    "days_listed": age,
-                    "threshold_days": LONG_LISTING_DAYS,
-                },
+                "detail": f"Listing has been observed for approximately {age} days.",
+                "evidence": {"days_listed": age, "threshold_days": LONG_LISTING_DAYS},
             })
 
-        # PRICE REDUCTION
-        price_reduction = detect_price_reduction(lead)
-
         if price_reduction["detected"]:
-            score += SCORES["price_reduction"]
-
+            opportunity_score += SCORES["price_reduction"]
             previous = price_reduction["previous_price"]
             current = price_reduction["current_price"]
             percent = price_reduction["reduction_percent"]
-
             reasoning.append({
                 "signal": "Price reduction",
-                "detail": (
-                    f"Price reduced from R{previous:,.0f} "
-                    f"to R{current:,.0f} "
-                    f"({percent:.1f}% reduction)."
-                ),
+                "detail": f"Price reduced from R{previous:,.0f} to R{current:,.0f} ({percent:.1f}% reduction).",
                 "evidence": price_reduction,
             })
 
-        # PRIORITY
-        if score >= 90:
-            priority = "Priority"
-        elif score >= 70:
+        if score >= 4:
             priority = "High"
-        elif score >= 40:
+        elif score >= 2:
             priority = "Medium"
         else:
             priority = "Low"
 
-        lead["opportunity_type"] = "Seller Opportunity Signal"
-        lead["opportunity_score"] = score
-        lead["priority"] = priority
-        lead["days_listed"] = age
+        if opportunity_score >= 90:
+            opportunity_priority = "Priority"
+        elif opportunity_score >= 70:
+            opportunity_priority = "High"
+        elif opportunity_score >= 40:
+            opportunity_priority = "Medium"
+        else:
+            opportunity_priority = "Low"
 
-        lead["signals"] = {
-            "long_listing": {
-                "detected": long_listing,
-                "days_listed": age,
-                "threshold_days": LONG_LISTING_DAYS,
+        filtered.append({
+            "name": name,
+            "address": address,
+            "place_id": place_id,
+            "website": website,
+            "rating": rating,
+            "reviews": reviews,
+            "priority": priority,
+            "source": source,
+            "opportunity_type": "Seller Opportunity Signal",
+            "opportunity_score": opportunity_score,
+            "opportunity_priority": opportunity_priority,
+            "days_listed": age,
+            "signal_count": len(reasoning),
+            "signals": {
+                "long_listing": {
+                    "detected": long_listing,
+                    "days_listed": age,
+                    "threshold_days": LONG_LISTING_DAYS,
+                },
+                "price_reduction": price_reduction,
             },
-            "price_reduction": price_reduction,
-        }
+            "reasoning": reasoning,
+        })
 
-        lead["reasoning"] = reasoning
-        lead["signal_count"] = len(reasoning)
-
-        opportunities.append(lead)
-
-    opportunities.sort(
-        key=lambda item: item.get("opportunity_score", 0),
+    priority_order = {"High": 3, "Medium": 2, "Low": 1}
+    filtered.sort(
+        key=lambda x: (x.get("opportunity_score", 0), priority_order.get(x["priority"], 1)),
         reverse=True,
     )
-
-    return opportunities
-'''
-
-path = Path("/mnt/data/filter_leads.py")
-path.write_text(code, encoding="utf-8")
-print(path)
+    return filtered
+""", encoding="utf-8")
+print(p)
