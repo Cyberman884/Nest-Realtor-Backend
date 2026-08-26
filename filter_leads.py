@@ -577,24 +577,9 @@ def filter_leads(raw_places):
         "Medium": 2,
         "Low": 1,
     }
-
     filtered.sort(
-        key=lambda x: (
-            x.get(
-                "opportunity_score",
-                0
-   .         ),
-
-            priority_order.get(
-                x.get(
-                    "priority",
-                    "Low"
-                ),
-                1
-            ),
-        ),
-
-        reverse=True,
+        key=lambda x: x.get("opportunity_score", 0),
+        reverse=True
     )
 
     return filtered
