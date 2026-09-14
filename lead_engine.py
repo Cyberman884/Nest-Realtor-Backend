@@ -144,13 +144,16 @@ def generate_leads(query: str, location: str) -> Dict:
     # FILTER
     # --------------------------------------------------
 
-    try:
+try:
 
-        leads = filter_leads(leads)
+    leads = filter_leads(
+        leads,
+        requested_area=location
+    )
 
-    except Exception as e:
+except Exception as e:
 
-        print("⚠️ Filter Error:", str(e))
+    print("⚠️ Filter Error:", str(e))
 
     print("✅ Returning", len(leads), "total leads")
 
