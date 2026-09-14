@@ -143,7 +143,6 @@ def generate_leads(query: str, location: str) -> Dict:
     # --------------------------------------------------
     # FILTER
     # --------------------------------------------------
-
 try:
     leads = filter_leads(
         leads,
@@ -166,4 +165,3 @@ return {
     ],
     "leads": leads
 }
-```
