@@ -143,25 +143,25 @@ def generate_leads(query: str, location: str) -> Dict:
     # --------------------------------------------------
     # FILTER
     # --------------------------------------------------
-try:
-    leads = filter_leads(
-        leads,
-        requested_area=location
-    )
+    try:
+        leads = filter_leads(
+            leads,
+            requested_area=location
+        )
 
-except Exception as e:
-    print("⚠️ Filter Error:", str(e))
+    except Exception as e:
+        print("⚠️ Filter Error:", str(e))
 
-print("✅ Returning", len(leads), "total leads")
+    print("✅ Returning", len(leads), "total leads")
 
-return {
-    "success": True,
-    "engine": "multi_source",
-    "count": len(leads),
-    "sources": [
-        "google_places",
-        "gumtree",
-        "facebook_marketplace"
-    ],
-    "leads": leads
-}
+    return {
+        "success": True,
+        "engine": "multi_source",
+        "count": len(leads),
+        "sources": [
+            "google_places",
+            "gumtree",
+            "facebook_marketplace"
+        ],
+        "leads": leads
+    }
