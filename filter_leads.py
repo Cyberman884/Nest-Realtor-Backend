@@ -66,7 +66,6 @@ def _first(place, keys):
 # ============================================================
 
 def _area_matches(place, requested_area=None):
-
     if not requested_area:
         return True
 
@@ -96,7 +95,17 @@ def _area_matches(place, requested_area=None):
         if x not in (None, "", [], {})
     )
 
+    # --------------------------------------------------------
+    # If the source does not provide a location, allow
+    # Facebook Marketplace results through when the search
+    # itself was made for the requested area.
+    # --------------------------------------------------------
     if not combined:
+        source = _normalise_source(place)
+
+        if source == "facebook_marketplace":
+            return True
+
         return False
 
     if requested in combined:
@@ -112,8 +121,10 @@ def _area_matches(place, requested_area=None):
         if word in combined
     )
 
-    return matches >= max(1, len(requested_words) - 1)
-
+    return matches >= max(
+        1,
+        len(requested_words) - 1
+    )
 
 # ============================================================
 # PROPERTY TYPE
@@ -177,48 +188,84 @@ def _property_text(place):
 
 def _is_residential(place):
 
-    text = _property_text(place)
+    # Only use the strongest property-identification fields
+    # for the residential/commercial decision.
+    fields = [
+        place.get("property_type"),
+        place.get("propertyType"),
+        place.get("type"),
+        place.get("category"),
+        place.get("listing_type"),
+        place.get("title"),
+        place.get("name"),
+    ]
 
-    for word in NON_HOUSE_WORDS:
-        if word in text:
-            return False
+    text = " ".join(
+        _normalise(x)
+        for x in fields
+        if x not in (None, "", [], {})
+    )
 
-    for word in HOUSE_WORDS:
+    # Clear residential indicators
+    residential_words = [
+        "house",
+        "home",
+        "residential",
+        "townhouse",
+        "town house",
+        "duplex",
+        "villa",
+        "cottage",
+        "farmhouse",
+        "farm house",
+        "apartment",
+        "flat",
+        "penthouse",
+        "simplex",
+        "cluster",
+        "property",
+    ]
+
+    for word in residential_words:
         if word in text:
             return True
 
-    property_type = _normalise(
-        _first(
-            place,
-            [
-                "property_type",
-                "propertyType",
-                "type",
-                "category",
-            ],
-        )
-    )
+    # Clear non-residential indicators
+    non_residential_words = [
+        "office",
+        "commercial",
+        "warehouse",
+        "industrial",
+        "retail",
+        "shop",
+        "restaurant",
+        "hotel",
+        "vacant land",
+        "land",
+        "plot",
+        "stand",
+        "parking",
+        "garage only",
+        "apartment block",
+    ]
 
-    if property_type:
+    for word in non_residential_words:
+        if word in text:
+            return False
 
-        residential_types = [
-            "house",
-            "townhouse",
-            "duplex",
-            "villa",
-            "cottage",
-            "residential",
-            "home",
-        ]
+    # If the source is a property marketplace and does not
+    # clearly identify the type, keep it instead of deleting
+    # a potentially valid seller opportunity.
+    source = _normalise_source(place)
 
-        return any(
-            x in property_type
-            for x in residential_types
-        )
+    if source in {
+        "gumtree",
+        "facebook_marketplace",
+    }:
+        return True
 
     return True
-
-
+    
 # ============================================================
 # SELLER / OWNER SIGNALS
 # ============================================================
@@ -802,13 +849,28 @@ def filter_leads(
         # ----------------------------------------------------
         # AREA FILTER
         # ----------------------------------------------------
+        #
+        # IMPORTANT:
+        # Use the already-normalised address instead of the
+        # original raw Apify object. This fixes Gumtree and
+        # Facebook location matching.
+        # ----------------------------------------------------
+
+        location_checked_place = dict(place)
+
+        if address:
+            location_checked_place["address"] = address
+            location_checked_place["location"] = address
+
+        if name:
+            location_checked_place["name"] = name
 
         if not _area_matches(
-            place,
+            location_checked_place,
             requested_area
         ):
             continue
-
+        
         # ----------------------------------------------------
         # RESIDENTIAL FILTER
         # ----------------------------------------------------
