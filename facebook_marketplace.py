@@ -1,6 +1,6 @@
+```python
 from apify_client import ApifyClient
 import os
-
 
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 
@@ -13,17 +13,28 @@ def build_marketplace_url(location):
 
     location = location.lower().strip()
 
-    if location in ["south africa", "sa", "rsa", "all", ""]:
-        return "https://www.facebook.com/marketplace/southafrica/propertyforsale"
+    if location in [
+        "south africa",
+        "sa",
+        "rsa",
+        "all",
+        ""
+    ]:
+        return (
+            "https://www.facebook.com/"
+            "marketplace/southafrica/propertyforsale"
+        )
 
     slug = location.replace(" ", "")
 
-    return f"https://www.facebook.com/marketplace/{slug}/propertyforsale"
+    return (
+        f"https://www.facebook.com/"
+        f"marketplace/{slug}/propertyforsale"
+    )
 
 
 def extract_location(item):
 
-    # Try the most common location fields returned by Marketplace data
     candidates = [
         item.get("location"),
         item.get("location_name"),
@@ -62,7 +73,8 @@ def get_facebook_marketplace(location, max_items=20):
         url = build_marketplace_url(location)
 
         print("🚀 Starting Facebook Marketplace")
-        print("URL:", url)
+        print("📍 Requested location:", location)
+        print("🌐 Facebook URL:", url)
 
         run_input = {
             "startUrls": [
@@ -88,6 +100,32 @@ def get_facebook_marketplace(location, max_items=20):
         leads = []
 
         for item in dataset.iterate_items():
+
+            # DIAGNOSTIC INFORMATION
+            if len(leads) < 3:
+
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("🧪 FACEBOOK RAW ITEM")
+                print("🧪 RAW KEYS:", list(item.keys()))
+                print("🧪 RAW LOCATION:", item.get("location"))
+                print("🧪 RAW LOCATION NAME:", item.get("location_name"))
+                print("🧪 RAW LISTING LOCATION:", item.get("listing_location"))
+                print("🧪 RAW ADDRESS:", item.get("address"))
+                print("🧪 RAW CITY:", item.get("city"))
+                print("🧪 RAW TOWN:", item.get("town"))
+                print("🧪 RAW SUBURB:", item.get("suburb"))
+                print("🧪 RAW LOCALITY:", item.get("locality"))
+                print("🧪 RAW REGION:", item.get("region"))
+                print(
+                    "🧪 RAW TITLE:",
+                    item.get("marketplace_listing_title")
+                )
+                print(
+                    "🧪 RAW LISTING URL:",
+                    item.get("listingUrl")
+                )
+                print("🧪 FULL RAW ITEM:", item)
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             listing_location = extract_location(item)
 
@@ -123,7 +161,6 @@ def get_facebook_marketplace(location, max_items=20):
             f"✅ Facebook returned {len(leads)} listings"
         )
 
-        # Helpful diagnostic
         locations_found = sum(
             1 for lead in leads
             if lead.get("location")
@@ -144,3 +181,4 @@ def get_facebook_marketplace(location, max_items=20):
         )
 
         return []
+```

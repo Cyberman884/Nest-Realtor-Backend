@@ -1,15 +1,14 @@
+```python
 from apify_client import ApifyClient
 import os
 
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
-
 client = ApifyClient(APIFY_TOKEN)
 
 ACTOR_ID = "JziY9YnglkuoWMDsq"
 
 
 def build_gumtree_url(location: str):
-
     location = location.strip().lower()
 
     cities = {
@@ -45,7 +44,8 @@ def search_gumtree(location, max_items=20):
     url = build_gumtree_url(location)
 
     print("🚀 Starting Gumtree")
-    print("URL:", url)
+    print("📍 Requested location:", location)
+    print("🌐 Gumtree URL:", url)
 
     run_input = {
         "startUrls": [
@@ -58,17 +58,35 @@ def search_gumtree(location, max_items=20):
     }
 
     try:
-        run = client.actor(ACTOR_ID).call(run_input=run_input)
+
+        run = client.actor(ACTOR_ID).call(
+            run_input=run_input
+        )
 
         print("RUN TYPE:", type(run))
         print("RUN:", run)
 
-        dataset = client.dataset(run.default_dataset_id)
+        dataset = client.dataset(
+            run.default_dataset_id
+        )
 
         leads = []
 
         for item in dataset.iterate_items():
 
+            # DIAGNOSTIC INFORMATION
+            if len(leads) < 3:
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("🧪 GUMTREE RAW ITEM")
+                print("🧪 RAW KEYS:", list(item.keys()))
+                print("🧪 RAW LOCATION:", item.get("location"))
+                print("🧪 RAW ADDRESS:", item.get("address"))
+                print("🧪 RAW SUBURB:", item.get("suburb"))
+                print("🧪 RAW CITY:", item.get("city"))
+                print("🧪 RAW TITLE:", item.get("title"))
+                print("🧪 RAW LINK:", item.get("link"))
+                print("🧪 FULL RAW ITEM:", item)
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             lead = {
                 "title": item.get("title"),
@@ -85,6 +103,17 @@ def search_gumtree(location, max_items=20):
             leads.append(lead)
 
         print(f"✅ Gumtree returned {len(leads)} listings")
+
+        # DIAGNOSTIC LOCATION SUMMARY
+        locations_found = sum(
+            1 for lead in leads
+            if lead.get("location")
+        )
+
+        print(
+            f"📍 Gumtree listings with location: "
+            f"{locations_found}/{len(leads)}"
+        )
 
         return {
             "success": True,
@@ -104,3 +133,4 @@ def search_gumtree(location, max_items=20):
             "leads": [],
             "error": str(e)
         }
+```
