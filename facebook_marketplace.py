@@ -1,4 +1,3 @@
-```python
 from apify_client import ApifyClient
 import os
 
