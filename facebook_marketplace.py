@@ -180,4 +180,3 @@ def get_facebook_marketplace(location, max_items=20):
         )
 
         return []
-```

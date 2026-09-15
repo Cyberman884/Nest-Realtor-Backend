@@ -132,4 +132,3 @@ def search_gumtree(location, max_items=20):
             "leads": [],
             "error": str(e)
         }
-```
