@@ -1,75 +1,116 @@
-import os
 import logging
+import re
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
 from lead_engine import generate_leads as run_lead_engine
-from supabase_client import supabase
 
-# --------------------------------------------------
-# ENV
-# --------------------------------------------------
-load_dotenv()
+
+app = FastAPI()
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("nest-realtor")
+logger = logging.getLogger(__name__)
 
-# --------------------------------------------------
-# APP
-# --------------------------------------------------
-app = FastAPI(title="Nest Realtor Backend", version="5.1.0"
-)
-@app.get("/test-supabase")
-async def test_supabase():
 
-    result = supabase.table("opportunities").select("*").limit(1).execute()
-
-    return {
-        "success": True,
-        "records_found": len(result.data)
-    }
-# --------------------------------------------------
-# ✅ CORS FIX (THIS IS WHAT YOU WERE MISSING)
-# --------------------------------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # allow all (safe for demo)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --------------------------------------------------
-# MODEL
-# --------------------------------------------------
 class LeadRequest(BaseModel):
-    query: str
-    location: str
-    user_id: str
+    query: str = ""
+    location: str = ""
+    user_id: str = ""
 
-# --------------------------------------------------
-# ROOT
-# --------------------------------------------------
+
+def normalize_search_input(query: str, location: str):
+    """
+    Fixes cases where the frontend sends the entire search phrase
+    inside the location field.
+
+    Example:
+        query = ""
+        location = "Houses for sale in Pretoria"
+
+    Becomes:
+        query = "Houses for sale"
+        location = "Pretoria"
+    """
+
+    query = (query or "").strip()
+    location = (location or "").strip()
+
+    # If location already looks like a normal city, leave it alone.
+    if not location:
+        return query, location
+
+    # Match phrases such as:
+    # "Houses for sale in Pretoria"
+    # "property for sale in Johannesburg"
+    # "homes for sale in Durban"
+    #
+    # Everything before "in" becomes the query.
+    # Everything after "in" becomes the location.
+
+    match = re.match(
+        r"^(.*?)\s+in\s+(.+)$",
+        location,
+        flags=re.IGNORECASE
+    )
+
+    if match:
+        possible_query = match.group(1).strip()
+        possible_location = match.group(2).strip()
+
+        # Only split if the first part looks like a search phrase.
+        search_words = [
+            "house",
+            "houses",
+            "home",
+            "homes",
+            "property",
+            "properties",
+            "flat",
+            "flats",
+            "apartment",
+            "apartments",
+            "land",
+            "plot",
+            "plots",
+            "commercial",
+            "farm",
+            "farms",
+            "sale",
+            "selling"
+        ]
+
+        if any(word in possible_query.lower() for word in search_words):
+            if not query:
+                query = possible_query
+
+            location = possible_location
+
+    return query, location
+
+
 @app.get("/")
 def root():
-    return {"status": "Nest Realtor backend running 🚀"}
+    return {
+        "success": True,
+        "message": "Nest Realtor Backend is running"
+    }
 
-# --------------------------------------------------
-# 🚀 LEADS ENDPOINT
-# --------------------------------------------------
+
+@app.get("/health")
+def health():
+    return {
+        "success": True,
+        "status": "healthy"
+    }
+
+
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
 
     try:
-
         print("🔥 /leads endpoint triggered")
-
-        # ----------------------------------------
-        # VALIDATION
-        # ----------------------------------------
 
         if not payload.location:
             return {
@@ -84,22 +125,40 @@ def generate_leads_endpoint(payload: LeadRequest):
             }
 
         print(f"👤 User: {payload.user_id}")
-        print(f"📍 Query: {payload.query}")
-        print(f"📍 Location: {payload.location}")
+        print(f"📥 Original Query: {payload.query}")
+        print(f"📥 Original Location: {payload.location}")
 
-        # ----------------------------------------
+        # ---------------------------------------------------------
+        # NORMALIZE SEARCH INPUT
+        # ---------------------------------------------------------
+
+        query, location = normalize_search_input(
+            payload.query,
+            payload.location
+        )
+
+        print(f"🔎 Final Query: {query}")
+        print(f"📍 Final Location: {location}")
+
+        if not location:
+            return {
+                "success": False,
+                "error": "Could not determine location"
+            }
+
+        # ---------------------------------------------------------
         # DEMO LIMIT
-        # ----------------------------------------
+        # ---------------------------------------------------------
 
         DEMO_LIMIT = 2
 
-        # ----------------------------------------
+        # ---------------------------------------------------------
         # RUN LEAD ENGINE
-        # ----------------------------------------
+        # ---------------------------------------------------------
 
         result = run_lead_engine(
-            query=payload.query,
-            location=payload.location
+            query=query,
+            location=location
         )
 
         if not result.get("success"):
@@ -107,21 +166,20 @@ def generate_leads_endpoint(payload: LeadRequest):
 
         leads = result.get("leads", [])
 
+        # Only return the first two opportunities during testing.
         leads = leads[:DEMO_LIMIT]
 
         leads_count = len(leads)
 
         print(f"✅ Leads generated: {leads_count}")
-
         print("📊 Sources:", result.get("sources"))
-
-        # ----------------------------------------
-        # RESPONSE
-        # ----------------------------------------
 
         return {
             "success": True,
-            "engine": result.get("engine", "multi_source"),
+            "engine": result.get(
+                "engine",
+                "multi_source"
+            ),
             "sources": result.get(
                 "sources",
                 [
@@ -132,16 +190,26 @@ def generate_leads_endpoint(payload: LeadRequest):
             ),
             "count": leads_count,
             "leads": leads,
+            "search": {
+                "query": query,
+                "location": location
+            },
             "usage": {
                 "used": leads_count,
                 "limit": DEMO_LIMIT,
-                "remaining": max(DEMO_LIMIT - leads_count, 0)
+                "remaining": max(
+                    DEMO_LIMIT - leads_count,
+                    0
+                )
             }
         }
 
     except Exception as e:
 
-        logger.error(f"❌ Error: {e}")
+        logger.error(
+            f"❌ Error: {e}",
+            exc_info=True
+        )
 
         return JSONResponse(
             status_code=200,
@@ -153,94 +221,4 @@ def generate_leads_endpoint(payload: LeadRequest):
                 "leads": [],
                 "error": str(e)
             }
-         )
-# --------------------------------------------------
-# 💳 YOCO CHECKOUT
-# --------------------------------------------------
-
-@app.post("/create_checkout")
-async def create_checkout(payload: dict):
-
-    try:
-        import requests
-
-        secret_key = os.getenv("YOCO_SECRET_KEY")
-
-        if not secret_key:
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "success": False,
-                    "error": "YOCO_SECRET_KEY is missing"
-                }
-            )
-
-        amount = int(payload.get("amount", 0))
-        plan = payload.get("plan", "Nest Realtor")
-
-        if amount <= 0:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "error": "Invalid payment amount"
-                }
-            )
-
-        checkout_data = {
-            "amount": amount,
-            "currency": "ZAR",
-            "successUrl": payload.get(
-                "success_url",
-                "https://nest-realtor.netlify.app/dashboard.html"
-            ),
-            "cancelUrl": payload.get(
-                "cancel_url",
-                "https://nest-realtor.netlify.app/pricing.html"
-            ),
-            "metadata": {
-                "plan": plan
-            }
-        }
-
-        response = requests.post(
-            "https://payments.yoco.com/api/checkouts",
-            headers={
-                "Authorization": f"Bearer {secret_key}",
-                "Content-Type": "application/json"
-            },
-            json=checkout_data,
-            timeout=30
         )
-
-        print("YOCO STATUS:", response.status_code)
-        print("YOCO RESPONSE:", response.text)
-
-        if response.status_code >= 400:
-            return JSONResponse(
-                status_code=response.status_code,
-                content={
-                    "success": False,
-                    "error": response.text
-                }
-            )
-
-        data = response.json()
-
-        return {
-            "success": True,
-            "redirectUrl": data.get("redirectUrl")
-        }
-
-    except Exception as e:
-
-        logger.error(f"❌ Yoco checkout error: {e}")
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e)
-            }
-        )
-
