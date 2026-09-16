@@ -3,6 +3,7 @@ import re
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from lead_engine import generate_leads as run_lead_engine
@@ -14,11 +15,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# ============================================================
+# CORS
+# ============================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============================================================
+# REQUEST MODEL
+# ============================================================
+
 class LeadRequest(BaseModel):
     query: str = ""
     location: str = ""
     user_id: str = ""
 
+
+# ============================================================
+# SEARCH INPUT NORMALIZER
+# ============================================================
 
 def normalize_search_input(query: str, location: str):
     """
@@ -26,10 +48,12 @@ def normalize_search_input(query: str, location: str):
     inside the location field.
 
     Example:
+
         query = ""
         location = "Houses for sale in Pretoria"
 
     Becomes:
+
         query = "Houses for sale"
         location = "Pretoria"
     """
@@ -37,17 +61,8 @@ def normalize_search_input(query: str, location: str):
     query = (query or "").strip()
     location = (location or "").strip()
 
-    # If location already looks like a normal city, leave it alone.
     if not location:
         return query, location
-
-    # Match phrases such as:
-    # "Houses for sale in Pretoria"
-    # "property for sale in Johannesburg"
-    # "homes for sale in Durban"
-    #
-    # Everything before "in" becomes the query.
-    # Everything after "in" becomes the location.
 
     match = re.match(
         r"^(.*?)\s+in\s+(.+)$",
@@ -59,7 +74,6 @@ def normalize_search_input(query: str, location: str):
         possible_query = match.group(1).strip()
         possible_location = match.group(2).strip()
 
-        # Only split if the first part looks like a search phrase.
         search_words = [
             "house",
             "houses",
@@ -81,7 +95,10 @@ def normalize_search_input(query: str, location: str):
             "selling"
         ]
 
-        if any(word in possible_query.lower() for word in search_words):
+        if any(
+            word in possible_query.lower()
+            for word in search_words
+        ):
             if not query:
                 query = possible_query
 
@@ -89,6 +106,10 @@ def normalize_search_input(query: str, location: str):
 
     return query, location
 
+
+# ============================================================
+# ROOT
+# ============================================================
 
 @app.get("/")
 def root():
@@ -98,6 +119,10 @@ def root():
     }
 
 
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
 @app.get("/health")
 def health():
     return {
@@ -106,11 +131,19 @@ def health():
     }
 
 
+# ============================================================
+# LEADS ENDPOINT
+# ============================================================
+
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
 
     try:
         print("🔥 /leads endpoint triggered")
+
+        # ----------------------------------------------------
+        # BASIC VALIDATION
+        # ----------------------------------------------------
 
         if not payload.location:
             return {
@@ -128,9 +161,9 @@ def generate_leads_endpoint(payload: LeadRequest):
         print(f"📥 Original Query: {payload.query}")
         print(f"📥 Original Location: {payload.location}")
 
-        # ---------------------------------------------------------
-        # NORMALIZE SEARCH INPUT
-        # ---------------------------------------------------------
+        # ----------------------------------------------------
+        # NORMALIZE QUERY + LOCATION
+        # ----------------------------------------------------
 
         query, location = normalize_search_input(
             payload.query,
@@ -146,15 +179,15 @@ def generate_leads_endpoint(payload: LeadRequest):
                 "error": "Could not determine location"
             }
 
-        # ---------------------------------------------------------
+        # ----------------------------------------------------
         # DEMO LIMIT
-        # ---------------------------------------------------------
+        # ----------------------------------------------------
 
         DEMO_LIMIT = 2
 
-        # ---------------------------------------------------------
+        # ----------------------------------------------------
         # RUN LEAD ENGINE
-        # ---------------------------------------------------------
+        # ----------------------------------------------------
 
         result = run_lead_engine(
             query=query,
@@ -164,9 +197,13 @@ def generate_leads_endpoint(payload: LeadRequest):
         if not result.get("success"):
             return result
 
+        # ----------------------------------------------------
+        # GET LEADS
+        # ----------------------------------------------------
+
         leads = result.get("leads", [])
 
-        # Only return the first two opportunities during testing.
+        # Keep the free/demo response limited.
         leads = leads[:DEMO_LIMIT]
 
         leads_count = len(leads)
@@ -174,12 +211,18 @@ def generate_leads_endpoint(payload: LeadRequest):
         print(f"✅ Leads generated: {leads_count}")
         print("📊 Sources:", result.get("sources"))
 
+        # ----------------------------------------------------
+        # RESPONSE
+        # ----------------------------------------------------
+
         return {
             "success": True,
+
             "engine": result.get(
                 "engine",
                 "multi_source"
             ),
+
             "sources": result.get(
                 "sources",
                 [
@@ -188,12 +231,16 @@ def generate_leads_endpoint(payload: LeadRequest):
                     "facebook_marketplace"
                 ]
             ),
+
             "count": leads_count,
+
             "leads": leads,
+
             "search": {
                 "query": query,
                 "location": location
             },
+
             "usage": {
                 "used": leads_count,
                 "limit": DEMO_LIMIT,
