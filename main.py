@@ -15,10 +15,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# CORS
-# ============================================================
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,35 +24,13 @@ app.add_middleware(
 )
 
 
-# ============================================================
-# REQUEST MODEL
-# ============================================================
-
 class LeadRequest(BaseModel):
     query: str = ""
     location: str = ""
     user_id: str = ""
 
 
-# ============================================================
-# SEARCH INPUT NORMALIZER
-# ============================================================
-
 def normalize_search_input(query: str, location: str):
-    """
-    Fixes cases where the frontend sends the entire search phrase
-    inside the location field.
-
-    Example:
-
-        query = ""
-        location = "Houses for sale in Pretoria"
-
-    Becomes:
-
-        query = "Houses for sale"
-        location = "Pretoria"
-    """
 
     query = (query or "").strip()
     location = (location or "").strip()
@@ -71,6 +45,7 @@ def normalize_search_input(query: str, location: str):
     )
 
     if match:
+
         possible_query = match.group(1).strip()
         possible_location = match.group(2).strip()
 
@@ -99,6 +74,7 @@ def normalize_search_input(query: str, location: str):
             word in possible_query.lower()
             for word in search_words
         ):
+
             if not query:
                 query = possible_query
 
@@ -107,87 +83,80 @@ def normalize_search_input(query: str, location: str):
     return query, location
 
 
-# ============================================================
-# ROOT
-# ============================================================
-
 @app.get("/")
 def root():
+
     return {
         "success": True,
         "message": "Nest Realtor Backend is running"
     }
 
 
-# ============================================================
-# HEALTH CHECK
-# ============================================================
-
 @app.get("/health")
 def health():
+
     return {
         "success": True,
         "status": "healthy"
     }
 
 
-# ============================================================
-# LEADS ENDPOINT
-# ============================================================
-
 @app.post("/leads")
 def generate_leads_endpoint(payload: LeadRequest):
 
     try:
+
         print("🔥 /leads endpoint triggered")
 
-        # ----------------------------------------------------
-        # BASIC VALIDATION
-        # ----------------------------------------------------
-
         if not payload.location:
+
             return {
                 "success": False,
                 "error": "Location is required"
             }
 
         if not payload.user_id:
+
             return {
                 "success": False,
                 "error": "Missing user_id"
             }
 
-        print(f"👤 User: {payload.user_id}")
-        print(f"📥 Original Query: {payload.query}")
-        print(f"📥 Original Location: {payload.location}")
+        print(
+            f"👤 User: {payload.user_id}"
+        )
 
-        # ----------------------------------------------------
-        # NORMALIZE QUERY + LOCATION
-        # ----------------------------------------------------
+        print(
+            f"📥 Original Query: {payload.query}"
+        )
+
+        print(
+            f"📥 Original Location: {payload.location}"
+        )
 
         query, location = normalize_search_input(
             payload.query,
             payload.location
         )
 
-        print(f"🔎 Final Query: {query}")
-        print(f"📍 Final Location: {location}")
+        print(
+            f"🔎 Final Query: {query}"
+        )
+
+        print(
+            f"📍 Final Location: {location}"
+        )
 
         if not location:
+
             return {
                 "success": False,
                 "error": "Could not determine location"
             }
 
-        # ----------------------------------------------------
-        # DEMO LIMIT
-        # ----------------------------------------------------
-
+        # This controls how many qualified
+        # opportunities are displayed.
         DEMO_LIMIT = 2
-
-        # ----------------------------------------------------
-        # RUN LEAD ENGINE
-        # ----------------------------------------------------
 
         result = run_lead_engine(
             query=query,
@@ -195,27 +164,41 @@ def generate_leads_endpoint(payload: LeadRequest):
         )
 
         if not result.get("success"):
+
             return result
 
-        # ----------------------------------------------------
-        # GET LEADS
-        # ----------------------------------------------------
+        leads = result.get(
+            "leads",
+            []
+        )
 
-        leads = result.get("leads", [])
-
-        # Keep the free/demo response limited.
         leads = leads[:DEMO_LIMIT]
 
         leads_count = len(leads)
 
-        print(f"✅ Leads generated: {leads_count}")
-        print("📊 Sources:", result.get("sources"))
+        print(
+            f"✅ Leads generated: {leads_count}"
+        )
 
-        # ----------------------------------------------------
-        # RESPONSE
-        # ----------------------------------------------------
+        print(
+            "📊 Sources:",
+            result.get("sources")
+        )
+
+        print(
+            "📊 Source counts:",
+            result.get("source_counts")
+        )
+
+        print(
+            "📊 Filtered source counts:",
+            result.get(
+                "filtered_source_counts"
+            )
+        )
 
         return {
+
             "success": True,
 
             "engine": result.get(
@@ -225,12 +208,20 @@ def generate_leads_endpoint(payload: LeadRequest):
 
             "sources": result.get(
                 "sources",
-                [
-                    "google_places",
-                    "gumtree",
-                    "facebook_marketplace"
-                ]
+                ["gumtree"]
             ),
+
+            "source_counts": result.get(
+                "source_counts",
+                {}
+            ),
+
+            "filtered_source_counts": result.get(
+                "filtered_source_counts",
+                {}
+            ),
+
+            "requested_location": location,
 
             "count": leads_count,
 
@@ -242,8 +233,11 @@ def generate_leads_endpoint(payload: LeadRequest):
             },
 
             "usage": {
+
                 "used": leads_count,
+
                 "limit": DEMO_LIMIT,
+
                 "remaining": max(
                     DEMO_LIMIT - leads_count,
                     0
@@ -259,13 +253,21 @@ def generate_leads_endpoint(payload: LeadRequest):
         )
 
         return JSONResponse(
+
             status_code=200,
+
             content={
+
                 "success": False,
+
                 "engine": "error",
+
                 "sources": [],
+
                 "count": 0,
+
                 "leads": [],
+
                 "error": str(e)
             }
         )
