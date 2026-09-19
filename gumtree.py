@@ -1107,7 +1107,9 @@ def search_gumtree(
 
             "error":
                 str(e)
-        }import math
+        }
+
+import math
 import os
 
 from apify_client import ApifyClient
