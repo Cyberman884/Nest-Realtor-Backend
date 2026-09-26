@@ -1,14 +1,16 @@
-import json
 import math
 import os
 
 from apify_client import ApifyClient
 
 
+# ==========================================================
+# APIFY
+# ==========================================================
+
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 
-ACTOR_ID = "JziY9YnglkuoWMDsq"
-
+ACTOR_ID = "solidcode/gumtree-scraper"
 
 client = ApifyClient(
     APIFY_TOKEN
@@ -16,77 +18,14 @@ client = ApifyClient(
 
 
 # ==========================================================
-# GUMTREE URLS
-# ==========================================================
-
-GUMTREE_URLS = {
-
-    "johannesburg":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "johannesburg/"
-        "v1c9074l3100090p1",
-
-    "pretoria":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "pretoria-tshwane/"
-        "v1c9074l3100094p1",
-
-    "cape town":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "cape-town/"
-        "v1c9074l3100006p1",
-
-    "durban":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "durban-city/"
-        "v1c9074l3100149p1",
-
-    "port elizabeth":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "port-elizabeth/"
-        "v1c9074l3100306p1",
-
-    "gqeberha":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "port-elizabeth/"
-        "v1c9074l3100306p1",
-
-    "east london":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "east-london/"
-        "v1c9074l3100300p1",
-
-    "bloemfontein":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "bloemfontein/"
-        "v1c9074l3100460p1",
-
-    "nelspruit":
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        "nelspruit/"
-        "v1c9074l3100398p1"
-}
-
-
-# ==========================================================
 # APPROXIMATE LOCATION GEO DATA
 # ==========================================================
-
-# These are practical sanity-check areas.
 #
+# These are practical sanity-check areas.
 # They are NOT official municipal boundaries.
 #
-# They are used to catch obviously incorrect results,
-# such as a Soshanguve search returning Cape Town.
+# They are used to reject obviously incorrect results.
+# ==========================================================
 
 LOCATION_GEO = {
 
@@ -126,72 +65,58 @@ LOCATION_GEO = {
 
 
 # ==========================================================
-# BUILD GUMTREE URL
+# LOCATION ALIASES
 # ==========================================================
 
-def build_gumtree_url(location):
+LOCATION_ALIASES = {
 
-    location = str(
-        location or ""
-    ).strip().lower()
+    "soshanguve": [
+        "soshanguve",
+        "soshanguve block"
+    ],
 
+    "pretoria": [
+        "pretoria",
+        "tshwane",
+        "northern pretoria"
+    ],
 
-    if location in GUMTREE_URLS:
+    "johannesburg": [
+        "johannesburg",
+        "joburg"
+    ],
 
-        return GUMTREE_URLS[
-            location
-        ]
+    "gqeberha": [
+        "gqeberha",
+        "port elizabeth"
+    ],
 
+    "port elizabeth": [
+        "port elizabeth",
+        "gqeberha"
+    ],
 
-    if location in {
-        "south africa",
-        "sa",
-        "rsa",
-        "all",
-        ""
-    }:
+    "nelspruit": [
+        "nelspruit",
+        "mbombela"
+    ],
 
-        return (
-            "https://www.gumtree.co.za/"
-            "s-houses-flats-for-sale/"
-            "v1c9074p1"
-        )
-
-
-    slug = (
-        location
-        .replace(
-            " ",
-            "-"
-        )
-        .replace(
-            "_",
-            "-"
-        )
-    )
-
-
-    return (
-        "https://www.gumtree.co.za/"
-        "s-houses-flats-for-sale/"
-        f"{slug}/v1c9074p1"
-    )
+    "mbombela": [
+        "mbombela",
+        "nelspruit"
+    ]
+}
 
 
 # ==========================================================
 # VALUE HELPER
 # ==========================================================
 
-def _value(
-    item,
-    *keys
-):
+def _value(item, *keys):
 
     for key in keys:
 
-        value = item.get(
-            key
-        )
+        value = item.get(key)
 
         if value not in (
             None,
@@ -201,7 +126,6 @@ def _value(
         ):
 
             return value
-
 
     return None
 
@@ -215,30 +139,26 @@ def _number(value):
     if value is None:
         return None
 
-
     if isinstance(
         value,
         (int, float)
     ):
 
-        return float(
-            value
-        )
+        return float(value)
 
+    text = str(value)
 
-    text = str(
-        value
-    ).replace(
-        ",",
-        ""
+    text = (
+        text
+        .replace(",", "")
+        .replace("R", "")
+        .replace("ZAR", "")
+        .strip()
     )
-
 
     try:
 
-        return float(
-            text
-        )
+        return float(text)
 
     except Exception:
 
@@ -256,44 +176,20 @@ def _distance_km(
     lon2
 ):
 
-    """
-    Haversine distance in kilometres.
-    """
-
     radius = 6371.0
 
+    lat1 = math.radians(lat1)
+    lon1 = math.radians(lon1)
 
-    lat1 = math.radians(
-        lat1
-    )
+    lat2 = math.radians(lat2)
+    lon2 = math.radians(lon2)
 
-    lon1 = math.radians(
-        lon1
-    )
-
-    lat2 = math.radians(
-        lat2
-    )
-
-    lon2 = math.radians(
-        lon2
-    )
-
-
-    dlat = (
-        lat2 - lat1
-    )
-
-    dlon = (
-        lon2 - lon1
-    )
-
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
 
     a = (
 
-        math.sin(
-            dlat / 2
-        ) ** 2
+        math.sin(dlat / 2) ** 2
 
         +
 
@@ -301,23 +197,17 @@ def _distance_km(
         *
         math.cos(lat2)
         *
-        math.sin(
-            dlon / 2
-        ) ** 2
+        math.sin(dlon / 2) ** 2
     )
 
-
     return (
-
         radius
         *
         2
         *
         math.atan2(
             math.sqrt(a),
-            math.sqrt(
-                1 - a
-            )
+            math.sqrt(1 - a)
         )
     )
 
@@ -330,62 +220,32 @@ def _text_location(item):
 
     fields = [
 
-        item.get(
-            "location"
-        ),
+        item.get("location"),
 
-        item.get(
-            "locationName"
-        ),
+        item.get("postcode"),
 
-        item.get(
-            "location_name"
-        ),
+        item.get("address"),
 
-        item.get(
-            "address"
-        ),
+        item.get("formattedAddress"),
 
-        item.get(
-            "formattedAddress"
-        ),
+        item.get("suburb"),
 
-        item.get(
-            "suburb"
-        ),
+        item.get("area"),
 
-        item.get(
-            "area"
-        ),
+        item.get("city"),
 
-        item.get(
-            "city"
-        ),
+        item.get("town"),
 
-        item.get(
-            "town"
-        ),
+        item.get("locality"),
 
-        item.get(
-            "region"
-        ),
+        item.get("region"),
 
-        item.get(
-            "locality"
-        ),
+        item.get("description"),
 
-        item.get(
-            "description"
-        ),
-
-        item.get(
-            "title"
-        )
+        item.get("title")
     ]
 
-
     parts = []
-
 
     for value in fields:
 
@@ -398,7 +258,6 @@ def _text_location(item):
 
             continue
 
-
         if isinstance(
             value,
             dict
@@ -409,15 +268,11 @@ def _text_location(item):
                 for v in value.values()
             )
 
-
         parts.append(
             str(value).lower()
         )
 
-
-    return " ".join(
-        parts
-    )
+    return " ".join(parts)
 
 
 # ==========================================================
@@ -433,7 +288,6 @@ def _location_is_plausible(
         requested_location or ""
     ).strip().lower()
 
-
     if not requested:
 
         return (
@@ -442,14 +296,51 @@ def _location_is_plausible(
         )
 
 
-    text = _text_location(
-        item
+    # ------------------------------------------------------
+    # RAW LOCATION
+    # ------------------------------------------------------
+
+    raw_location = str(
+        item.get("location") or ""
+    ).strip().lower()
+
+
+    # ------------------------------------------------------
+    # EXACT / DIRECT LOCATION MATCH
+    # ------------------------------------------------------
+
+    if requested in raw_location:
+
+        return (
+            True,
+            "Direct location match"
+        )
+
+
+    # ------------------------------------------------------
+    # ALIAS MATCH
+    # ------------------------------------------------------
+
+    aliases = LOCATION_ALIASES.get(
+        requested,
+        []
     )
 
+    for alias in aliases:
+
+        if alias in raw_location:
+
+            return (
+                True,
+                "Location alias match"
+            )
+
 
     # ------------------------------------------------------
-    # DIRECT TEXT MATCH
+    # BROADER TEXT CHECK
     # ------------------------------------------------------
+
+    text = _text_location(item)
 
     if requested in text:
 
@@ -459,54 +350,13 @@ def _location_is_plausible(
         )
 
 
-    # ------------------------------------------------------
-    # LOCATION ALIASES
-    # ------------------------------------------------------
-
-    aliases = {
-
-        "soshanguve": [
-            "soshanguve",
-            "soshanguve block"
-        ],
-
-        "pretoria": [
-            "pretoria",
-            "tshwane"
-        ],
-
-        "johannesburg": [
-            "johannesburg",
-            "joburg"
-        ],
-
-        "cape town": [
-            "cape town",
-            "capetown"
-        ],
-
-        "gqeberha": [
-            "gqeberha",
-            "port elizabeth"
-        ],
-
-        "nelspruit": [
-            "nelspruit",
-            "mbombela"
-        ]
-    }
-
-
-    for alias in aliases.get(
-        requested,
-        []
-    ):
+    for alias in aliases:
 
         if alias in text:
 
             return (
                 True,
-                "Location alias match"
+                "Location alias text match"
             )
 
 
@@ -518,7 +368,6 @@ def _location_is_plausible(
         requested
     )
 
-
     latitude = _number(
         _value(
             item,
@@ -526,7 +375,6 @@ def _location_is_plausible(
             "lat"
         )
     )
-
 
     longitude = _number(
         _value(
@@ -556,7 +404,6 @@ def _location_is_plausible(
         center_lon = geo[1]
         radius = geo[2]
 
-
         distance = _distance_km(
 
             center_lat,
@@ -566,24 +413,18 @@ def _location_is_plausible(
             longitude
         )
 
-
         if distance <= radius:
 
             return (
-
                 True,
-
                 (
                     "Coordinate match "
                     f"({distance:.1f} km)"
                 )
             )
 
-
         return (
-
             False,
-
             (
                 "Coordinate mismatch "
                 f"({distance:.1f} km)"
@@ -595,7 +436,7 @@ def _location_is_plausible(
     # UNKNOWN / OTHER
     # ------------------------------------------------------
 
-    if not text:
+    if not raw_location:
 
         return (
             False,
@@ -603,7 +444,7 @@ def _location_is_plausible(
         )
 
 
-    if text.strip() in {
+    if raw_location in {
         "other",
         "other other"
     }:
@@ -621,44 +462,6 @@ def _location_is_plausible(
 
 
 # ==========================================================
-# RAW GUMTREE LOCATION DIAGNOSTICS
-# ==========================================================
-
-def _location_diagnostics(item):
-    """
-    Return raw location-related fields from the Gumtree Actor.
-    This is diagnostic only and does not weaken validation.
-    """
-
-    keys = [
-        "location",
-        "locationName",
-        "location_name",
-        "address",
-        "formattedAddress",
-        "suburb",
-        "area",
-        "city",
-        "town",
-        "region",
-        "locality",
-        "latitude",
-        "longitude",
-        "lat",
-        "lon",
-        "lng",
-    ]
-
-    result = {}
-
-    for key in keys:
-        if key in item:
-            result[key] = item.get(key)
-
-    return result
-
-
-# ==========================================================
 # MAIN GUMTREE SEARCH
 # ==========================================================
 
@@ -668,41 +471,22 @@ def search_gumtree(
 ):
 
     """
-    Fetch a small number of Gumtree listings.
+    Search South African Gumtree property listings
+    using SolidCode's Gumtree Scraper.
 
-    The Actor can sometimes return geographically
-    incorrect listings. We therefore preserve the
-    location evidence and validation result so the
-    qualification filter can reject bad records.
+    SolidCode replaces the previous crawlerbros actor.
+
+    The function keeps the same return structure expected
+    by the Nest Realtor lead engine.
     """
 
-
-    search_url = str(
-        location or ""
-    ).strip()
-
-
-    if not search_url.startswith(
-        "http"
-    ):
-
-        search_url = build_gumtree_url(
-            search_url
-        )
-
-
     print(
-        "🚀 Starting Gumtree"
+        "🚀 Starting SolidCode Gumtree"
     )
 
     print(
         "📍 Requested location:",
         location
-    )
-
-    print(
-        "🔗 Gumtree URL:",
-        search_url
     )
 
     print(
@@ -712,39 +496,72 @@ def search_gumtree(
 
 
     # ======================================================
-    # APIFY INPUT
+    # VALIDATE APIFY TOKEN
+    # ======================================================
+
+    if not APIFY_TOKEN:
+
+        print(
+            "❌ APIFY_TOKEN is missing"
+        )
+
+        return {
+
+            "success": False,
+
+            "engine": "gumtree",
+
+            "count": 0,
+
+            "leads": [],
+
+            "error":
+                "APIFY_TOKEN is not configured"
+        }
+
+
+    # ======================================================
+    # SOLIDCODE INPUT
     # ======================================================
 
     run_input = {
 
-        "startUrls": [
+        "searchKeyword":
+            "houses for sale",
 
-            {
-                "url": search_url
-            }
+        "region":
+            "za",
 
-        ],
+        "location":
+            str(location or "").strip(),
 
-        "maxItems":
-            max_items,
+        "category":
+            "property-for-sale",
+
+        "sortBy":
+            "most_recent",
+
+        "maxResults":
+            int(max_items),
 
         "includeListingDetails":
             True,
 
-        "cookies": [],
-
-        "proxy": {
-
-            "useApifyProxy":
-                True
-        }
+        "includePhone":
+            False
     }
+
+
+    print(
+        "🧾 SolidCode input:",
+        run_input
+    )
 
 
     try:
 
         # ==================================================
-        # RUN ACTOR
+        # RUN SOLIDCODE ACTOR
         # ==================================================
 
         run = client.actor(
@@ -753,6 +570,10 @@ def search_gumtree(
             run_input=run_input
         )
 
+
+        # ==================================================
+        # DATASET ID
+        # ==================================================
 
         dataset_id = getattr(
             run,
@@ -791,10 +612,15 @@ def search_gumtree(
         if not dataset_id:
 
             raise RuntimeError(
-
-                "Gumtree Apify run did not "
-                "return a dataset ID"
+                "SolidCode Gumtree run did "
+                "not return a dataset ID"
             )
+
+
+        print(
+            "📦 Dataset:",
+            dataset_id
+        )
 
 
         # ==================================================
@@ -805,59 +631,59 @@ def search_gumtree(
             dataset_id
         )
 
-
         leads = []
 
+
+        # ==================================================
+        # PROCESS LISTINGS
+        # ==================================================
 
         for item in dataset.iterate_items():
 
             # ----------------------------------------------
-            # LOCATION
+            # BASIC FIELDS
             # ----------------------------------------------
 
-            latitude = _value(
-
+            title = _value(
                 item,
-
-                "latitude",
-
-                "lat"
+                "title",
+                "name"
             )
 
 
-            longitude = _value(
-
+            price = _value(
                 item,
+                "price",
+                "currentPrice",
+                "listingPrice"
+            )
 
-                "longitude",
 
-                "lon",
+            if price is None:
 
-                "lng"
+                price = _number(
+                    item.get(
+                        "priceRaw"
+                    )
+                )
+
+
+            currency = _value(
+                item,
+                "currency"
             )
 
 
             location_value = _value(
-
                 item,
+                "location"
+            )
 
-                "location",
 
-                "locationName",
-
-                "location_name",
-
-                "address",
-
-                "formattedAddress",
-
-                "suburb",
-
-                "area",
-
-                "city",
-
-                "town"
+            description = _value(
+                item,
+                "description",
+                "details"
             )
 
 
@@ -865,65 +691,123 @@ def search_gumtree(
             # SELLER
             # ----------------------------------------------
 
-            seller_type = _value(
-
-                item,
-
-                "sellerType",
-
-                "seller_type",
-
-                "DwellingForSaleBy"
-            )
-
-
             seller_name = _value(
-
                 item,
-
                 "sellerName",
-
                 "seller_name",
-
                 "seller"
             )
 
 
-            # ----------------------------------------------
-            # RAW LOCATION DIAGNOSTIC
-            # ----------------------------------------------
-
-            diagnostic = _location_diagnostics(item)
-
-            print(
-                "🔎 Gumtree raw listing:",
-                _value(item, "title", "name")
+            seller_type = _value(
+                item,
+                "sellerType",
+                "seller_type"
             )
 
-            print(
-                "   Requested:",
-                location
+
+            # ----------------------------------------------
+            # DATE / MARKET TIME
+            # ----------------------------------------------
+
+            posted_date = _value(
+                item,
+                "postedAt",
+                "postedDate",
+                "posted_date",
+                "datePosted"
             )
 
-            print(
-                "   Raw location fields:",
-                json.dumps(
-                    diagnostic,
-                    ensure_ascii=False,
-                    default=str
+
+            days_on_market = _value(
+                item,
+                "daysOnSite",
+                "daysOnMarket",
+                "days_on_market",
+                "daysListed",
+                "days_listed"
+            )
+
+
+            # ----------------------------------------------
+            # LOCATION
+            # ----------------------------------------------
+
+            latitude = _number(
+                _value(
+                    item,
+                    "latitude",
+                    "lat"
                 )
             )
 
-            print(
-                "   Extracted location value:",
-                repr(location_value)
+
+            longitude = _number(
+                _value(
+                    item,
+                    "longitude",
+                    "lon",
+                    "lng"
+                )
             )
 
-            print(
-                "   Coordinates:",
-                repr(latitude),
-                repr(longitude)
+
+            # ----------------------------------------------
+            # CATEGORY
+            # ----------------------------------------------
+
+            category = _value(
+                item,
+                "category",
+                "propertyType",
+                "property_type"
             )
+
+
+            # ----------------------------------------------
+            # ATTRIBUTES
+            # ----------------------------------------------
+
+            attributes = _value(
+                item,
+                "attributes"
+            )
+
+
+            if not isinstance(
+                attributes,
+                dict
+            ):
+
+                attributes = {}
+
+
+            # ----------------------------------------------
+            # IMAGE
+            # ----------------------------------------------
+
+            images = item.get(
+                "images"
+            )
+
+            image = None
+
+            if isinstance(
+                images,
+                list
+            ) and images:
+
+                image = images[0]
+
+            else:
+
+                image = _value(
+                    item,
+                    "image",
+                    "imageUrl",
+                    "image_url"
+                )
+
 
             # ----------------------------------------------
             # LOCATION CHECK
@@ -931,202 +815,138 @@ def search_gumtree(
 
             plausible, location_reason = (
                 _location_is_plausible(
-
                     item,
-
                     location
                 )
             )
 
 
             # ----------------------------------------------
-            # BUILD LEAD
+            # BUILD STANDARD NEST LEAD
             # ----------------------------------------------
 
             lead = {
 
-                "title": _value(
+                "title":
+                    title,
 
-                    item,
+                "price":
+                    price,
 
-                    "title",
+                "price_raw":
+                    item.get(
+                        "priceRaw"
+                    ),
 
-                    "name"
-                ),
+                "previous_price":
+                    None,
 
-
-                "price": _value(
-
-                    item,
-
-                    "price",
-
-                    "currentPrice",
-
-                    "listingPrice"
-                ),
-
-
-                "previous_price": _value(
-
-                    item,
-
-                    "previousPrice",
-
-                    "previous_price",
-
-                    "oldPrice",
-
-                    "originalPrice"
-                ),
-
-
-                "currency": _value(
-
-                    item,
-
-                    "currency"
-                ),
-
+                "currency":
+                    currency,
 
                 "location":
                     location_value,
 
+                "address":
+                    location_value,
 
-                "address": _value(
+                "suburb":
+                    location_value,
 
-                    item,
+                "city":
+                    None,
 
-                    "address",
+                "category":
+                    category,
 
-                    "formattedAddress"
-                ),
-
-
-                "suburb": _value(
-
-                    item,
-
-                    "suburb",
-
-                    "area"
-                ),
-
-
-                "city": _value(
-
-                    item,
-
-                    "city",
-
-                    "town"
-                ),
-
-
-                "category": _value(
-
-                    item,
-
-                    "category",
-
-                    "propertyType",
-
-                    "property_type"
-                ),
-
+                "property_type":
+                    category,
 
                 "seller_type":
                     seller_type,
 
-
                 "seller":
                     seller_name,
 
+                "seller_name":
+                    seller_name,
 
-                "description": _value(
+                "description":
+                    description,
 
-                    item,
+                "posted_date":
+                    posted_date,
 
-                    "description",
+                "days_on_market":
+                    days_on_market,
 
-                    "details"
-                ),
+                "days_on_site":
+                    days_on_market,
 
+                "url":
+                    _value(
+                        item,
+                        "url",
+                        "link",
+                        "listingUrl",
+                        "sourceUrl"
+                    ),
 
-                "posted_date": _value(
+                "image":
+                    image,
 
-                    item,
+                "images":
+                    images if isinstance(
+                        images,
+                        list
+                    ) else [],
 
-                    "postedDate",
-
-                    "posted_date",
-
-                    "datePosted"
-                ),
-
-
-                "days_on_market": _value(
-
-                    item,
-
-                    "daysOnMarket",
-
-                    "days_on_market",
-
-                    "daysListed",
-
-                    "days_listed"
-                ),
-
-
-                "url": _value(
-
-                    item,
-
-                    "link",
-
-                    "url",
-
-                    "listingUrl",
-
-                    "sourceUrl"
-                ),
-
-
-                "image": _value(
-
-                    item,
-
-                    "image",
-
-                    "imageUrl",
-
-                    "image_url"
-                ),
-
+                "image_count":
+                    _value(
+                        item,
+                        "imageCount"
+                    ),
 
                 "latitude":
                     latitude,
 
-
                 "longitude":
                     longitude,
 
+                "listing_id":
+                    _value(
+                        item,
+                        "listingId",
+                        "shortId"
+                    ),
+
+                "short_id":
+                    item.get(
+                        "shortId"
+                    ),
+
+                "attributes":
+                    attributes,
+
+                "featured":
+                    item.get(
+                        "featured"
+                    ),
+
+                "urgent":
+                    item.get(
+                        "urgent"
+                    ),
 
                 "source":
                     "gumtree",
 
-
-                # Diagnostic fields.
+                # Diagnostic fields
                 "location_verified":
                     plausible,
 
-
                 "location_check":
-                    location_reason,
-
-                "raw_location_debug":
-                    diagnostic
+                    location_reason
             }
 
 
@@ -1135,17 +955,64 @@ def search_gumtree(
             )
 
 
+            # ----------------------------------------------
+            # LOG
+            # ----------------------------------------------
+
             print(
+                "🔎 SolidCode listing:",
+                title
+            )
 
-                "🧭 Gumtree location check:",
+            print(
+                "   Location:",
+                location_value
+            )
 
+            print(
+                "   Price:",
+                item.get(
+                    "priceRaw"
+                )
+            )
+
+            print(
+                "   Seller:",
+                seller_name
+            )
+
+            print(
+                "   Seller type:",
+                seller_type
+            )
+
+            print(
+                "   Posted:",
+                posted_date
+            )
+
+            print(
+                "   Days on site:",
+                days_on_market
+            )
+
+            print(
+                "   Location verified:",
+                plausible
+            )
+
+            print(
+                "   Location check:",
                 location_reason
             )
 
 
-        print(
+        # ==================================================
+        # FINAL RESULT
+        # ==================================================
 
-            f"✅ Gumtree returned "
+        print(
+            f"✅ SolidCode Gumtree returned "
             f"{len(leads)} listings"
         )
 
@@ -1169,7 +1036,7 @@ def search_gumtree(
     except Exception as e:
 
         print(
-            "❌ Gumtree Error:",
+            "❌ SolidCode Gumtree Error:",
             str(e)
         )
 
