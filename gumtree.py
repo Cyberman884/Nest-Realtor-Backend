@@ -536,7 +536,7 @@ def search_gumtree(
             str(location or "").strip(),
 
         "category":
-            "property-for-sale",
+            "property",
 
         "sortBy":
             "most_recent",
