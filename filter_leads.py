@@ -1,29 +1,44 @@
-# filter_leads.py
-
 import re
 from difflib import SequenceMatcher
 
 
 # ============================================================
-# HELPERS
+# GENERAL HELPERS
 # ============================================================
 
 def _text(value):
     if value is None:
         return ""
 
-    if isinstance(value, (list, tuple, set)):
-        return " ".join(str(x) for x in value)
+    if isinstance(
+        value,
+        (list, tuple, set)
+    ):
+        return " ".join(
+            str(x)
+            for x in value
+        )
 
     if isinstance(value, dict):
-        return " ".join(str(v) for v in value.values())
+        return " ".join(
+            str(v)
+            for v in value.values()
+        )
 
     return str(value)
 
 
 def _normalise(value):
-    value = _text(value).lower().strip()
-    value = re.sub(r"\s+", " ", value)
+    value = _text(
+        value
+    ).lower().strip()
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value
+    )
+
     return value
 
 
@@ -31,22 +46,39 @@ def _number(value):
     if value is None:
         return None
 
-    if isinstance(value, (int, float)):
+    if isinstance(
+        value,
+        (int, float)
+    ):
         return float(value)
 
     text = _text(value)
-    text = text.replace(",", "")
-    text = text.replace("R", "")
-    text = text.replace("$", "")
-    text = text.replace(" ", "")
 
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    text = text.replace(
+        ",", ""
+    )
+    text = text.replace(
+        "R", ""
+    )
+    text = text.replace(
+        "$", ""
+    )
+    text = text.replace(
+        " ", ""
+    )
+
+    match = re.search(
+        r"-?\d+(?:\.\d+)?",
+        text
+    )
 
     if not match:
         return None
 
     try:
-        return float(match.group())
+        return float(
+            match.group()
+        )
     except Exception:
         return None
 
@@ -55,30 +87,27 @@ def _first(place, keys):
     for key in keys:
         value = place.get(key)
 
-        if value not in (None, "", [], {}):
+        if value not in (
+            None,
+            "",
+            [],
+            {}
+        ):
             return value
 
     return None
 
 
 # ============================================================
-# AREA FILTERING
+# LOCATION MATCHING
 # ============================================================
 
-def _area_matches(place, requested_area=None):
-
-    if not requested_area:
-        return True
-
-    requested = _normalise(requested_area)
-
-    if not requested:
-        return True
-
-    area_fields = [
+def _location_text(place):
+    fields = [
         place.get("location"),
         place.get("address"),
         place.get("formatted_address"),
+        place.get("formattedAddress"),
         place.get("vicinity"),
         place.get("suburb"),
         place.get("area"),
@@ -87,32 +116,147 @@ def _area_matches(place, requested_area=None):
         place.get("region"),
         place.get("locality"),
         place.get("location_name"),
-        place.get("address_locality"),
+        place.get("description"),
+        place.get("title"),
+        place.get("name"),
     ]
 
-    combined = " ".join(
-        _normalise(x)
-        for x in area_fields
-        if x not in (None, "", [], {})
+    return " ".join(
+        _normalise(value)
+        for value in fields
+        if value not in (
+            None,
+            "",
+            [],
+            {}
+        )
     )
 
-    if not combined:
+
+def _location_matches_text(
+    place,
+    requested_area
+):
+    requested = _normalise(
+        requested_area
+    )
+
+    if not requested:
+        return True
+
+    text = _location_text(
+        place
+    )
+
+    if not text:
         return False
 
-    if requested in combined:
+    if requested in text:
         return True
+
+    aliases = {
+        "soshanguve": [
+            "soshanguve",
+        ],
+        "pretoria": [
+            "pretoria",
+            "tshwane",
+        ],
+        "johannesburg": [
+            "johannesburg",
+            "joburg",
+        ],
+        "cape town": [
+            "cape town",
+            "capetown",
+        ],
+        "durban": [
+            "durban",
+        ],
+        "gqeberha": [
+            "gqeberha",
+            "port elizabeth",
+        ],
+        "port elizabeth": [
+            "port elizabeth",
+            "gqeberha",
+        ],
+        "nelspruit": [
+            "nelspruit",
+            "mbombela",
+        ],
+    }
+
+    for alias in aliases.get(
+        requested,
+        []
+    ):
+        if alias in text:
+            return True
 
     requested_words = requested.split()
 
-    if len(requested_words) == 1:
-        return requested in combined
+    if len(requested_words) > 1:
+        matches = sum(
+            1
+            for word in requested_words
+            if word in text
+        )
 
-    matches = sum(
-        1 for word in requested_words
-        if word in combined
+        if matches >= len(
+            requested_words
+        ):
+            return True
+
+    return False
+
+
+def _area_matches(
+    place,
+    requested_area=None
+):
+    """Validate the requested area without discarding usable
+    coordinate evidence from the Gumtree scraper.
+
+    SolidCode/Gumtree can sometimes mark location_verified=False
+    even when location_check contains a valid coordinate match.
+    We trust an explicit coordinate match only when it is inside
+    the same 35 km safety radius used by the scraper.
+    """
+    if not requested_area:
+        return True
+
+    source = _normalise_source(place)
+
+    # First honour an explicit successful validation.
+    if place.get("location_verified") is True:
+        return True
+
+    # The scraper may expose useful coordinate evidence in
+    # location_check while location_verified is False.
+    location_check = _normalise(
+        place.get("location_check")
     )
 
-    return matches >= max(1, len(requested_words) - 1)
+    match = re.search(
+        r"coordinate\s+match\s*\(([-+]?[0-9]*\.?[0-9]+)\s*km\)",
+        location_check
+    )
+
+    if match:
+        try:
+            distance = float(match.group(1))
+            if distance <= 35:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    # Direct textual evidence is also valid when the source has
+    # not provided a usable coordinate check.
+    return _location_matches_text(
+        place,
+        requested_area
+    )
 
 
 # ============================================================
@@ -133,53 +277,58 @@ HOUSE_WORDS = {
     "cottage",
     "farm house",
     "farmhouse",
+    "apartment",
+    "flat",
+    "penthouse",
 }
 
-NON_HOUSE_WORDS = {
+NON_RESIDENTIAL_WORDS = {
     "office",
-    "commercial",
     "warehouse",
     "industrial",
     "retail",
     "shop",
-    "business",
     "restaurant",
     "hotel",
     "vacant land",
-    "land",
-    "plot",
-    "stand",
-    "parking",
+    "commercial property",
+    "business premises",
+    "parking bay",
     "garage only",
-    "apartment block",
 }
 
 
 def _property_text(place):
-
     fields = [
         place.get("title"),
         place.get("name"),
         place.get("description"),
         place.get("property_type"),
+        place.get("propertyType"),
         place.get("type"),
         place.get("category"),
-        place.get("propertyType"),
         place.get("listing_type"),
     ]
 
     return " ".join(
-        _normalise(x)
-        for x in fields
-        if x not in (None, "", [], {})
+        _normalise(value)
+        for value in fields
+        if value not in (
+            None,
+            "",
+            [],
+            {}
+        )
     )
 
 
 def _is_residential(place):
+    text = _property_text(
+        place
+    )
 
-    text = _property_text(place)
-
-    for word in NON_HOUSE_WORDS:
+    # Strong non-residential indicators.
+    for word in NON_RESIDENTIAL_WORDS:
         if word in text:
             return False
 
@@ -195,20 +344,22 @@ def _is_residential(place):
                 "propertyType",
                 "type",
                 "category",
-            ],
+            ]
         )
     )
 
     if property_type:
-
         residential_types = [
             "house",
             "townhouse",
             "duplex",
             "villa",
             "cottage",
+            "apartment",
+            "flat",
             "residential",
             "home",
+            "property",
         ]
 
         return any(
@@ -216,11 +367,13 @@ def _is_residential(place):
             for x in residential_types
         )
 
+    # If the source gives no usable property type,
+    # don't reject solely because the field is absent.
     return True
 
 
 # ============================================================
-# SELLER / OWNER SIGNALS
+# SELLER SIGNAL
 # ============================================================
 
 OWNER_WORDS = {
@@ -246,15 +399,11 @@ AGENT_WORDS = {
     "estate agency",
     "property group",
     "property specialist",
-    "agent listing",
-    "property company",
-    "business",
-    "company",
+    "property management",
 }
 
 
 def _seller_signal(place):
-
     fields = [
         place.get("seller"),
         place.get("seller_name"),
@@ -269,9 +418,14 @@ def _seller_signal(place):
     ]
 
     text = " ".join(
-        _normalise(x)
-        for x in fields
-        if x not in (None, "", [], {})
+        _normalise(value)
+        for value in fields
+        if value not in (
+            None,
+            "",
+            [],
+            {}
+        )
     )
 
     owner_hits = [
@@ -287,15 +441,27 @@ def _seller_signal(place):
     ]
 
     if owner_hits and not agent_hits:
-        return "Owner/private seller", 40
+        return (
+            "Owner/private seller",
+            30
+        )
+
+    if agent_hits and not owner_hits:
+        return (
+            "Agent listing",
+            -15
+        )
 
     if owner_hits and agent_hits:
-        return "Mixed seller signal", 10
+        return (
+            "Mixed seller signal",
+            10
+        )
 
-    if agent_hits:
-        return "Agent/business listing", -10
-
-    return "Seller not explicitly identified", 0
+    return (
+        "Seller not explicitly identified",
+        0
+    )
 
 
 # ============================================================
@@ -303,7 +469,6 @@ def _seller_signal(place):
 # ============================================================
 
 def _price_reduction(place):
-
     old_price = _first(
         place,
         [
@@ -315,7 +480,7 @@ def _price_reduction(place):
             "originalPrice",
             "price_before",
             "priceBefore",
-        ],
+        ]
     )
 
     current_price = _first(
@@ -326,11 +491,16 @@ def _price_reduction(place):
             "currentPrice",
             "listing_price",
             "listingPrice",
-        ],
+        ]
     )
 
-    old_number = _number(old_price)
-    current_number = _number(current_price)
+    old_number = _number(
+        old_price
+    )
+
+    current_number = _number(
+        current_price
+    )
 
     if (
         old_number is None
@@ -346,10 +516,14 @@ def _price_reduction(place):
             "score": 0,
         }
 
-    reduction = old_number - current_number
+    reduction = (
+        old_number
+        - current_number
+    )
 
     percentage = (
-        reduction / old_number
+        reduction
+        / old_number
     ) * 100
 
     if percentage >= 10:
@@ -361,9 +535,13 @@ def _price_reduction(place):
 
     return {
         "detected": True,
-        "percentage": round(percentage, 1),
+        "percentage": round(
+            percentage,
+            1
+        ),
         "reason": (
-            f"Price reduced by {percentage:.1f}%"
+            f"Price reduced by "
+            f"{percentage:.1f}%"
         ),
         "score": score,
     }
@@ -374,7 +552,6 @@ def _price_reduction(place):
 # ============================================================
 
 def _days_on_market(place):
-
     value = _first(
         place,
         [
@@ -385,10 +562,12 @@ def _days_on_market(place):
             "listing_days",
             "listingDays",
             "days",
-        ],
+        ]
     )
 
-    days = _number(value)
+    days = _number(
+        value
+    )
 
     if days is None:
         return {
@@ -398,7 +577,9 @@ def _days_on_market(place):
             "score": 0,
         }
 
-    days = int(days)
+    days = int(
+        days
+    )
 
     if days >= 180:
         score = 25
@@ -413,7 +594,8 @@ def _days_on_market(place):
 
     if score > 0:
         reason = (
-            f"Listed for approximately {days} days"
+            f"Listed for approximately "
+            f"{days} days"
         )
 
     return {
@@ -425,167 +607,10 @@ def _days_on_market(place):
 
 
 # ============================================================
-# MULTI-SOURCE SIGNAL
-# ============================================================
-
-def _source_count(place):
-
-    values = []
-
-    for key in [
-        "sources",
-        "source",
-        "source_count",
-        "sourceCount",
-        "listing_sources",
-        "listingSources",
-    ]:
-
-        value = place.get(key)
-
-        if value not in (None, "", [], {}):
-            values.append(value)
-
-    if not values:
-        return 1
-
-    source_value = values[0]
-
-    if isinstance(
-        source_value,
-        (list, tuple, set)
-    ):
-        return max(
-            1,
-            len(source_value)
-        )
-
-    number = _number(source_value)
-
-    if number is not None:
-        return max(
-            1,
-            int(number)
-        )
-
-    return 1
-
-
-# ============================================================
-# REASONING
-# ============================================================
-
-def _build_reasoning(
-    place,
-    seller_reason,
-    price_data,
-    market_data,
-):
-
-    reasons = []
-
-    # Seller signal
-    if (
-        seller_reason
-        and seller_reason !=
-        "Seller not explicitly identified"
-    ):
-
-        reasons.append({
-            "signal": seller_reason,
-            "detail": (
-                "Listing contains an "
-                "owner/private or seller-type signal."
-                if "Owner" in seller_reason
-                or "private" in seller_reason.lower()
-                else seller_reason
-            ),
-            "evidence": {
-                "seller_signal": seller_reason
-            },
-        })
-
-    # Price reduction
-    if price_data["detected"]:
-
-        reasons.append({
-            "signal": "Price reduction",
-            "detail": price_data["reason"],
-            "evidence": price_data,
-        })
-
-    # Time on market
-    if market_data["detected"]:
-
-        reasons.append({
-            "signal": "Long time on market",
-            "detail": market_data["reason"],
-            "evidence": {
-                "days_on_market":
-                    market_data["days"],
-                "threshold_days": 180,
-            },
-        })
-
-    # Source
-    source = place.get("source")
-
-    if source:
-
-        source_name = (
-            str(source)
-            .replace("_", " ")
-            .title()
-        )
-
-        reasons.append({
-            "signal": "Source",
-            "detail": (
-                f"Found via {source_name}."
-            ),
-            "evidence": {
-                "source": source
-            },
-        })
-
-    # Multi-source
-    source_count = _source_count(place)
-
-    if source_count > 1:
-
-        reasons.append({
-            "signal": "Multi-source evidence",
-            "detail": (
-                f"Information found across "
-                f"{source_count} sources."
-            ),
-            "evidence": {
-                "source_count": source_count
-            },
-        })
-
-    # Fallback
-    if not reasons:
-
-        reasons.append({
-            "signal": "Public listing signal",
-            "detail": (
-                "Potential seller opportunity "
-                "identified from available "
-                "public listing information."
-            ),
-            "evidence": {},
-        })
-
-    return reasons
-
-
-# ============================================================
-# SOURCE NORMALISATION
+# SOURCE
 # ============================================================
 
 def _normalise_source(place):
-
     source = _normalise(
         place.get(
             "source",
@@ -618,70 +643,124 @@ def _normalise_source(place):
 
 
 # ============================================================
-# RELEVANCE SCORING
+# REASONING
 # ============================================================
 
-def _location_score(place, requested_area):
-    check = _normalise(place.get("location_check"))
-    verified = place.get("location_verified")
+def _build_reasoning(
+    place,
+    seller_reason,
+    price_data,
+    market_data
+):
+    reasons = []
 
-    if verified is True:
-        return 20, place.get("location_check") or "Verified location match"
+    if (
+        seller_reason
+        and seller_reason
+        != "Seller not explicitly identified"
+    ):
+        if seller_reason == "Owner/private seller":
+            detail = (
+                "The listing contains an "
+                "owner/private seller signal."
+            )
+        elif seller_reason == "Agent listing":
+            detail = (
+                "The listing appears to "
+                "be advertised by an agent "
+                "or agency."
+            )
+        else:
+            detail = seller_reason
 
-    if any(term in check for term in (
-        "coordinate match",
-        "direct match",
-        "alias match",
-        "location match",
-    )):
-        return 20, place.get("location_check") or "Verified location match"
+        reasons.append({
+            "signal": seller_reason,
+            "detail": detail,
+            "evidence": {
+                "seller_signal":
+                    seller_reason
+            },
+        })
 
-    if _area_matches(place, requested_area):
-        return 15, "Requested area match"
+    if price_data["detected"]:
+        reasons.append({
+            "signal": "Price reduction",
+            "detail":
+                price_data["reason"],
+            "evidence":
+                price_data,
+        })
 
-    return 0, "No reliable location match"
+    if market_data["detected"]:
+        reasons.append({
+            "signal":
+                "Long time on market",
+            "detail":
+                market_data["reason"],
+            "evidence": {
+                "days_on_market":
+                    market_data["days"],
+                "threshold_days":
+                    180,
+            },
+        })
 
+    source = place.get(
+        "source"
+    )
 
-def _property_type_score(place):
-    text = _property_text(place)
+    if source:
+        source_name = (
+            str(source)
+            .replace(
+                "_",
+                " "
+            )
+            .title()
+        )
 
-    if any(word in text for word in HOUSE_WORDS):
-        return 15, "Residential property type match"
+        reasons.append({
+            "signal": "Source",
+            "detail": (
+                f"Found via "
+                f"{source_name}."
+            ),
+            "evidence": {
+                "source": source
+            },
+        })
 
-    if _is_residential(place):
-        return 10, "Residential property listing"
+    location_check = place.get(
+        "location_check"
+    )
 
-    return 0, "Non-residential listing"
+    if location_check:
+        reasons.append({
+            "signal":
+                "Location validation",
+            "detail":
+                str(location_check),
+            "evidence": {
+                "location_verified":
+                    place.get(
+                        "location_verified"
+                    )
+            },
+        })
 
+    if not reasons:
+        reasons.append({
+            "signal":
+                "Public listing signal",
+            "detail": (
+                "Potential seller opportunity "
+                "identified from the available "
+                "public listing information."
+            ),
+            "evidence": {},
+        })
 
-def _fresh_listing(place):
-    value = _first(place, [
-        "days_on_market", "daysOnMarket",
-        "days_listed", "daysListed",
-        "listing_days", "listingDays", "days",
-        "daysOnSite",
-    ])
-
-    days = _number(value)
-
-    if days is None:
-        return False, 0, None
-
-    days = max(0, int(days))
-
-    if days <= 7:
-        return True, 10, f"Fresh listing ({days} days)"
-
-    if days <= 30:
-        return True, 5, f"Recently listed ({days} days)"
-
-    return False, 0, None
-
-
-def _price_match_score(place):
-    # The current filter receives no min/max preference values.
-    # Do not invent a price match. Keep this component neutral.
-    return 0, None, "Price preference not supplied to filter"
+    return reasons
 
 
 # ============================================================
@@ -692,329 +771,244 @@ def filter_leads(
     raw_places,
     requested_area=None
 ):
-
     if not raw_places:
         return []
 
     filtered = []
     seen = set()
 
+    print(
+        "🔎 FILTER INPUT:",
+        len(raw_places)
+    )
+
     for place in raw_places:
 
-        if not isinstance(place, dict):
+        if not isinstance(
+            place,
+            dict
+        ):
             continue
 
-        source = _normalise_source(place)
+        source = _normalise_source(
+            place
+        )
 
-        # ----------------------------------------------------
-        # FIELD NORMALISATION
-        # ----------------------------------------------------
-
-        if source == "google_places":
-
-            name = _first(
-                place,
-                [
-                    "name",
-                    "title",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "address",
-                    "formatted_address",
-                    "vicinity",
-                    "location",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "website",
-                    "url",
-                ],
-            )
-
-            place_id = place.get(
-                "place_id"
-            )
-
-            rating = place.get(
-                "rating"
-            )
-
-            reviews = _first(
-                place,
-                [
-                    "user_ratings_total",
-                    "reviews",
-                ],
-            )
-
-        elif source == "gumtree":
-
-            name = _first(
-                place,
-                [
-                    "title",
-                    "name",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "location",
-                    "address",
-                    "suburb",
-                    "city",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "url",
-                    "website",
-                ],
-            )
-
-            place_id = None
-            rating = None
-            reviews = None
-
-        elif source == "facebook_marketplace":
-
-            name = _first(
-                place,
-                [
-                    "title",
-                    "name",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "location",
-                    "address",
-                    "suburb",
-                    "city",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "url",
-                    "website",
-                ],
-            )
-
-            place_id = None
-            rating = None
-            reviews = None
-
-        else:
-
-            name = _first(
-                place,
-                [
-                    "name",
-                    "title",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "address",
-                    "formatted_address",
-                    "location",
-                    "suburb",
-                    "city",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "website",
-                    "url",
-                ],
-            )
-
-            place_id = place.get(
-                "place_id"
-            )
-
-            rating = place.get(
-                "rating"
-            )
-
-            reviews = _first(
-                place,
-                [
-                    "user_ratings_total",
-                    "reviews",
-                ],
-            )
-
-        # ----------------------------------------------------
-        # NAME REQUIRED
-        # ----------------------------------------------------
+        name = _first(
+            place,
+            [
+                "title",
+                "name"
+            ]
+        )
 
         if not name:
+            print(
+                "⏭️ Rejected: no name/title"
+            )
             continue
 
         # ----------------------------------------------------
-        # AREA FILTER
+        # LOCATION
         # ----------------------------------------------------
 
         if not _area_matches(
             place,
             requested_area
-        ) and place.get("location_verified") is not True:
+        ):
+            print(
+                "⏭️ Rejected location:",
+                source,
+                name,
+                place.get(
+                    "location_check",
+                    place.get(
+                        "location"
+                    )
+                )
+            )
             continue
 
         # ----------------------------------------------------
-        # RESIDENTIAL FILTER
+        # PROPERTY TYPE
         # ----------------------------------------------------
 
-        if not _is_residential(place):
+        if not _is_residential(
+            place
+        ):
+            print(
+                "⏭️ Rejected non-residential:",
+                name
+            )
             continue
 
         # ----------------------------------------------------
         # DEDUPLICATION
         # ----------------------------------------------------
 
+        address = _first(
+            place,
+            [
+                "address",
+                "formatted_address",
+                "formattedAddress",
+                "location",
+                "suburb",
+                "city",
+            ]
+        )
+
+        url = _first(
+            place,
+            [
+                "url",
+                "link",
+                "listingUrl"
+            ]
+        )
+
         unique_key = (
-            f"{source}-"
-            f"{_normalise(name)}-"
-            f"{_normalise(address)}"
+            f"{source}|"
+            f"{_normalise(name)}|"
+            f"{_normalise(address)}|"
+            f"{_normalise(url)}"
         )
 
         if unique_key in seen:
+            print(
+                "⏭️ Rejected duplicate:",
+                name
+            )
             continue
 
-        seen.add(unique_key)
-
-        # ----------------------------------------------------
-        # SELLER SIGNAL
-        # ----------------------------------------------------
-
-        seller_reason, seller_score = (
-            _seller_signal(place)
+        seen.add(
+            unique_key
         )
 
         # ----------------------------------------------------
-        # PRICE SIGNAL
+        # SIGNALS
         # ----------------------------------------------------
+
+        seller_reason, seller_score = (
+            _seller_signal(
+                place
+            )
+        )
 
         price_data = _price_reduction(
             place
         )
-
-        # ----------------------------------------------------
-        # MARKET TIME SIGNAL
-        # ----------------------------------------------------
 
         market_data = _days_on_market(
             place
         )
 
         # ----------------------------------------------------
-        # OPPORTUNITY SCORE
+        # SCORE
         # ----------------------------------------------------
-        #
-        # Relevance signals make a valid listing scoreable.
-        # Seller-intent signals then push genuine opportunities
-        # much higher. This prevents a valid listing from being
-        # stuck at 0 while avoiding giving ordinary listings a
-        # high seller-opportunity score.
-        #
-        # Maximum positive components:
-        #   Location match      20
-        #   Property type       15
-        #   Price preference    10 (neutral until preferences exist)
-        #   Fresh listing        10
-        #   180+ day listing     20
-        #   Price reduction     15
-        #   Multi-source        25
-        #   Owner / FSBO        40
-        #
-        # Agent/business listing: -10
-        # Final score is capped at 100.
-        # ----------------------------------------------------
+        # Relevance points describe whether this is a useful
+        # property for the requested search. Opportunity points
+        # describe evidence that the seller may be motivated.
 
-        location_score, location_detail = _location_score(
-            place, requested_area
+        location_score = 20
+        location_detail = (
+            place.get("location_check")
+            or "Requested location matched"
         )
 
-        property_score, property_detail = _property_type_score(place)
+        property_score = 15
+        property_detail = "Residential property"
 
-        price_match_score, price_match_detected, price_match_detail = (
-            _price_match_score(place)
-        )
-
-        fresh_detected, fresh_score, fresh_detail = _fresh_listing(place)
-
-        source_count = _source_count(place)
-
-        if source_count >= 3:
-            multi_source_score = 25
-            multi_source_detail = "Evidence found across 3+ sources"
-        elif source_count >= 2:
-            multi_source_score = 15
-            multi_source_detail = f"Evidence found across {source_count} sources"
+        # Freshness is useful context, but is not a seller-intent
+        # signal on its own.
+        days_value = market_data.get("days")
+        if days_value is not None and days_value <= 30:
+            fresh_score = 10
+            fresh_detected = True
+            fresh_detail = f"Listed approximately {days_value} days ago"
         else:
-            multi_source_score = 0
-            multi_source_detail = "Single source"
+            fresh_score = 0
+            fresh_detected = False
+            fresh_detail = None
+
+        # Keep the intended opportunity weights.
+        long_score = min(20, market_data["score"])
+        reduction_score = min(15, price_data["score"])
+
+        # FSBO/private owner is a strong seller-intent signal.
+        # Agent/business listings remain valid opportunities but do
+        # not receive the owner bonus.
+        seller_text = _normalise(
+            " ".join(
+                str(place.get(key) or "")
+                for key in [
+                    "seller_type",
+                    "seller",
+                    "seller_name",
+                    "description",
+                    "title",
+                ]
+            )
+        )
+
+        fsbo_terms = [
+            "fsbo",
+            "for sale by owner",
+            "private seller",
+            "private owner",
+            "owner listed",
+            "selling privately",
+            "by owner",
+        ]
+
+        fsbo_detected = any(
+            term in seller_text
+            for term in fsbo_terms
+        )
+
+        if fsbo_detected:
+            seller_score_final = 40
+            seller_signal_final = "Owner/private seller"
+        else:
+            seller_score_final = 0
+            seller_signal_final = seller_reason
+
+        # Count independent sources for the same listing.
+        # At the moment the engine normally supplies one source, so
+        # this remains 0 unless duplicate evidence is actually present.
+        listing_key = _normalise(
+            url or name
+        )
+        source_count = len({
+            _normalise_source(item)
+            for item in raw_places
+            if _normalise(item.get("url") or item.get("link") or item.get("listingUrl") or item.get("title") or item.get("name")) == listing_key
+        })
+        multi_source_score = 25 if source_count > 1 else 0
 
         raw_score = (
             location_score
             + property_score
-            + price_match_score
             + fresh_score
-            + market_data["score"]
-            + price_data["score"]
+            + long_score
+            + reduction_score
+            + seller_score_final
             + multi_source_score
-            + seller_score
         )
-
-        score = max(0, min(100, int(raw_score)))
-
-        # ----------------------------------------------------
-        # SCORE LIMIT
-        # ----------------------------------------------------
 
         score = max(
             0,
-            min(
-                100,
-                int(score)
-            )
+            min(100, int(raw_score))
         )
 
-        # ----------------------------------------------------
-        # PRIORITY
-        # ----------------------------------------------------
-
-        if score >= 80:
+        if score >= 90:
             priority = "Priority"
-
-        elif score >= 65:
+        elif score >= 70:
             priority = "High"
-
         elif score >= 40:
             priority = "Medium"
-
         else:
             priority = "Low"
-
         # ----------------------------------------------------
         # REASONING
         # ----------------------------------------------------
@@ -1023,92 +1017,100 @@ def filter_leads(
             place,
             seller_reason,
             price_data,
-            market_data,
+            market_data
+        )
+
+        signal_count = sum(
+            1
+            for signal in [
+                fsbo_detected,
+                price_data[
+                    "detected"
+                ],
+                market_data[
+                    "detected"
+                ],
+                source_count > 1,
+            ]
+            if signal
         )
 
         # ----------------------------------------------------
         # OUTPUT
         # ----------------------------------------------------
 
-        filtered.append({
+        lead = dict(place)
 
+        lead.update({
             "name": name,
-
+            "title": _first(
+                place,
+                [
+                    "title",
+                    "name"
+                ]
+            ),
             "address": address,
-
-            "place_id": place_id,
-
-            "website": website,
-
-            "rating": rating,
-
-            "reviews": reviews,
-
             "source": source,
-
             "priority": priority,
-
-            "opportunity_priority": priority,
-
+            "opportunity_priority":
+                priority,
             "opportunity_type":
                 "Seller Opportunity Signal",
 
-            # Seller signal
             "seller_signal":
-                seller_reason,
+                seller_signal_final,
 
-            # Price signal
             "price_reduction_detected":
-                price_data["detected"],
+                price_data[
+                    "detected"
+                ],
 
             "price_reduction_percentage":
-                price_data["percentage"],
+                price_data[
+                    "percentage"
+                ],
 
-            # Market-time signal
             "long_time_on_market":
-                market_data["detected"],
+                market_data[
+                    "detected"
+                ],
 
             "days_on_market":
-                market_data["days"],
+                market_data[
+                    "days"
+                ],
 
             "days_listed":
-                market_data["days"],
+                market_data[
+                    "days"
+                ],
 
-            # Structured signals
             "signals": {
-
                 "location": {
-                    "detected": location_score > 0,
+                    "detected": True,
                     "score": location_score,
                     "detail": location_detail,
                 },
-
                 "property_type": {
-                    "detected": property_score > 0,
+                    "detected": True,
                     "score": property_score,
                     "detail": property_detail,
                 },
-
                 "seller": {
-                    "detected":
-                        seller_score > 0,
-                    "type":
-                        seller_reason,
-                    "score":
-                        max(
-                            0,
-                            seller_score
-                        ),
+                    "detected": fsbo_detected,
+                    "type": seller_signal_final,
+                    "score": seller_score_final,
                 },
-
+                "fresh_listing": {
+                    "detected": fresh_detected,
+                    "score": fresh_score,
+                    "detail": fresh_detail,
+                },
                 "price_reduction": {
                     "detected":
                         price_data[
                             "detected"
-                        ],
-                    "reduction_percent":
-                        price_data[
-                            "percentage"
                         ],
                     "percentage":
                         price_data[
@@ -1119,7 +1121,6 @@ def filter_leads(
                             "score"
                         ],
                 },
-
                 "long_listing": {
                     "detected":
                         market_data[
@@ -1134,70 +1135,47 @@ def filter_leads(
                             "score"
                         ],
                 },
-
                 "multi_source": {
-                    "detected":
-                        source_count > 1,
-                    "source_count":
-                        source_count,
-                    "score":
-                        multi_source_score,
+                    "detected": source_count > 1,
+                    "source_count": source_count,
+                    "score": multi_source_score,
                 },
 
-                "fresh_listing": {
-                    "detected": fresh_detected,
-                    "score": fresh_score,
-                    "detail": fresh_detail,
-                },
-
-                "price_match": {
-                    "detected": price_match_detected is True,
-                    "score": price_match_score,
-                    "detail": price_match_detail,
-                },
             },
 
-            "score_breakdown": {
-                "location": location_score,
-                "property_type": property_score,
-                "price_match": price_match_score,
-                "fresh_listing": fresh_score,
-                "long_listing": market_data["score"],
-                "price_reduction": price_data["score"],
-                "multi_source": multi_source_score,
-                "seller_signal": seller_score,
-                "raw_score": raw_score,
-                "final_score": score,
-            },
-
-            # Reasoning
             "reasoning":
                 reasoning,
 
             "signal_count":
-                sum(
-                    1
-                    for signal in [
-                        seller_score > 0,
-                        price_data[
-                            "detected"
-                        ],
-                        market_data[
-                            "detected"
-                        ],
-                        source_count > 1,
-                    ]
-                    if signal
-                ),
+                signal_count,
 
-            # Final score
+            "score_breakdown": {
+                "location": location_score,
+                "property_type": property_score,
+                "fresh_listing": fresh_score,
+                "long_listing": long_score,
+                "price_reduction": reduction_score,
+                "fsbo_owner": seller_score_final,
+                "multi_source": multi_source_score,
+                "raw_score": raw_score,
+                "final_score": score,
+            },
+
             "opportunity_score":
                 score,
         })
 
-    # ========================================================
-    # SORT
-    # ========================================================
+        filtered.append(
+            lead
+        )
+
+        print(
+            "✅ Accepted:",
+            source,
+            name,
+            "score=",
+            score
+        )
 
     priority_order = {
         "Priority": 4,
@@ -1207,20 +1185,25 @@ def filter_leads(
     }
 
     filtered.sort(
-        key=lambda x: (
+        key=lambda item: (
             priority_order.get(
-                x.get(
+                item.get(
                     "opportunity_priority",
                     "Low"
                 ),
-                1,
+                1
             ),
-            x.get(
+            item.get(
                 "opportunity_score",
                 0
-            ),
+            )
         ),
-        reverse=True,
+        reverse=True
+    )
+
+    print(
+        "🎯 FILTER OUTPUT:",
+        len(filtered)
     )
 
     return filtered
