@@ -215,44 +215,27 @@ def _area_matches(
     place,
     requested_area=None
 ):
-    """Validate the requested area without discarding usable
-    coordinate evidence from the Gumtree scraper.
-
-    SolidCode/Gumtree can sometimes mark location_verified=False
-    even when location_check contains a valid coordinate match.
-    We trust an explicit coordinate match only when it is inside
-    the same 35 km safety radius used by the scraper.
-    """
     if not requested_area:
         return True
 
-    source = _normalise_source(place)
-
-    # First honour an explicit successful validation.
-    if place.get("location_verified") is True:
-        return True
-
-    # The scraper may expose useful coordinate evidence in
-    # location_check while location_verified is False.
-    location_check = _normalise(
-        place.get("location_check")
+    source = _normalise_source(
+        place
     )
 
-    match = re.search(
-        r"coordinate\s+match\s*\(([-+]?[0-9]*\.?[0-9]+)\s*km\)",
-        location_check
-    )
+    # Gumtree has been observed returning "Other"
+    # together with usable coordinates. Prefer the
+    # source's own location check when available.
+    if source == "gumtree":
+        location_verified = place.get(
+            "location_verified"
+        )
 
-    if match:
-        try:
-            distance = float(match.group(1))
-            if distance <= 35:
-                return True
-        except (TypeError, ValueError):
-            pass
+        if location_verified is True:
+            return True
 
-    # Direct textual evidence is also valid when the source has
-    # not provided a usable coordinate check.
+        if location_verified is False:
+            return False
+
     return _location_matches_text(
         place,
         requested_area
@@ -906,109 +889,34 @@ def filter_leads(
         # ----------------------------------------------------
         # SCORE
         # ----------------------------------------------------
-        # Relevance points describe whether this is a useful
-        # property for the requested search. Opportunity points
-        # describe evidence that the seller may be motivated.
 
-        location_score = 20
-        location_detail = (
-            place.get("location_check")
-            or "Requested location matched"
-        )
+        score = 0
 
-        property_score = 15
-        property_detail = "Residential property"
-
-        # Freshness is useful context, but is not a seller-intent
-        # signal on its own.
-        days_value = market_data.get("days")
-        if days_value is not None and days_value <= 30:
-            fresh_score = 10
-            fresh_detected = True
-            fresh_detail = f"Listed approximately {days_value} days ago"
-        else:
-            fresh_score = 0
-            fresh_detected = False
-            fresh_detail = None
-
-        # Keep the intended opportunity weights.
-        long_score = min(20, market_data["score"])
-        reduction_score = min(15, price_data["score"])
-
-        # FSBO/private owner is a strong seller-intent signal.
-        # Agent/business listings remain valid opportunities but do
-        # not receive the owner bonus.
-        seller_text = _normalise(
-            " ".join(
-                str(place.get(key) or "")
-                for key in [
-                    "seller_type",
-                    "seller",
-                    "seller_name",
-                    "description",
-                    "title",
-                ]
-            )
-        )
-
-        fsbo_terms = [
-            "fsbo",
-            "for sale by owner",
-            "private seller",
-            "private owner",
-            "owner listed",
-            "selling privately",
-            "by owner",
+        score += seller_score
+        score += price_data[
+            "score"
         ]
-
-        fsbo_detected = any(
-            term in seller_text
-            for term in fsbo_terms
-        )
-
-        if fsbo_detected:
-            seller_score_final = 40
-            seller_signal_final = "Owner/private seller"
-        else:
-            seller_score_final = 0
-            seller_signal_final = seller_reason
-
-        # Count independent sources for the same listing.
-        # At the moment the engine normally supplies one source, so
-        # this remains 0 unless duplicate evidence is actually present.
-        listing_key = _normalise(
-            url or name
-        )
-        source_count = len({
-            _normalise_source(item)
-            for item in raw_places
-            if _normalise(item.get("url") or item.get("link") or item.get("listingUrl") or item.get("title") or item.get("name")) == listing_key
-        })
-        multi_source_score = 25 if source_count > 1 else 0
-
-        raw_score = (
-            location_score
-            + property_score
-            + fresh_score
-            + long_score
-            + reduction_score
-            + seller_score_final
-            + multi_source_score
-        )
+        score += market_data[
+            "score"
+        ]
 
         score = max(
             0,
-            min(100, int(raw_score))
+            min(
+                100,
+                int(score)
+            )
         )
 
-        if score >= 90:
+        if score >= 80:
             priority = "Priority"
-        elif score >= 70:
+        elif score >= 65:
             priority = "High"
         elif score >= 40:
             priority = "Medium"
         else:
             priority = "Low"
+
         # ----------------------------------------------------
         # REASONING
         # ----------------------------------------------------
@@ -1023,14 +931,13 @@ def filter_leads(
         signal_count = sum(
             1
             for signal in [
-                fsbo_detected,
+                seller_score > 0,
                 price_data[
                     "detected"
                 ],
                 market_data[
                     "detected"
                 ],
-                source_count > 1,
             ]
             if signal
         )
@@ -1059,7 +966,7 @@ def filter_leads(
                 "Seller Opportunity Signal",
 
             "seller_signal":
-                seller_signal_final,
+                seller_reason,
 
             "price_reduction_detected":
                 price_data[
@@ -1087,25 +994,16 @@ def filter_leads(
                 ],
 
             "signals": {
-                "location": {
-                    "detected": True,
-                    "score": location_score,
-                    "detail": location_detail,
-                },
-                "property_type": {
-                    "detected": True,
-                    "score": property_score,
-                    "detail": property_detail,
-                },
                 "seller": {
-                    "detected": fsbo_detected,
-                    "type": seller_signal_final,
-                    "score": seller_score_final,
-                },
-                "fresh_listing": {
-                    "detected": fresh_detected,
-                    "score": fresh_score,
-                    "detail": fresh_detail,
+                    "detected":
+                        seller_score > 0,
+                    "type":
+                        seller_reason,
+                    "score":
+                        max(
+                            0,
+                            seller_score
+                        ),
                 },
                 "price_reduction": {
                     "detected":
@@ -1135,12 +1033,6 @@ def filter_leads(
                             "score"
                         ],
                 },
-                "multi_source": {
-                    "detected": source_count > 1,
-                    "source_count": source_count,
-                    "score": multi_source_score,
-                },
-
             },
 
             "reasoning":
@@ -1148,18 +1040,6 @@ def filter_leads(
 
             "signal_count":
                 signal_count,
-
-            "score_breakdown": {
-                "location": location_score,
-                "property_type": property_score,
-                "fresh_listing": fresh_score,
-                "long_listing": long_score,
-                "price_reduction": reduction_score,
-                "fsbo_owner": seller_score_final,
-                "multi_source": multi_source_score,
-                "raw_score": raw_score,
-                "final_score": score,
-            },
 
             "opportunity_score":
                 score,
