@@ -3,7 +3,6 @@ from apify_client import ApifyClient
 
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 ACTOR_ID = "solidcode/gumtree-scraper"
-
 client = ApifyClient(APIFY_TOKEN)
 
 
@@ -15,8 +14,13 @@ def _value(item, *keys):
     return None
 
 
-def search_gumtree(location, max_items=4):
-    """Thin integration for the SolidCode Gumtree Scraper."""
+def search_gumtree(location, max_items=5):
+    """Thin Nest -> SolidCode Gumtree integration.
+
+    Uses the same successful search pattern observed in the direct
+    SolidCode run: 'Houses for sale in <location>'.
+    No coordinate or location validation is performed here.
+    """
     location = str(location or "").strip()
 
     if not location:
@@ -28,19 +32,20 @@ def search_gumtree(location, max_items=4):
         return {"success": False, "engine": "gumtree", "count": 0,
                 "leads": [], "error": "APIFY_TOKEN is not configured"}
 
+    search_keyword = f"Houses for sale in {location}"
     run_input = {
-        "searchKeyword": "houses for sale",
-        "region": "za",
-        "location": location,
-        "category": "property",
-        "sortBy": "most_recent",
-        "maxResults": int(max_items),
+        "category": "all",
         "includeListingDetails": True,
-        "includePhone": False
+        "includePhone": False,
+        "maxResults": int(max_items),
+        "region": "za",
+        "searchKeyword": search_keyword,
+        "sortBy": "most_recent"
     }
 
     print("🚀 Starting SolidCode Gumtree")
     print("📍 Requested location:", location)
+    print("🔎 Search keyword:", search_keyword)
     print("🔢 Max items:", max_items)
     print("🧾 SolidCode input:", run_input)
 
@@ -62,9 +67,9 @@ def search_gumtree(location, max_items=4):
             seller_name = _value(item, "sellerName", "seller_name", "seller")
             seller_type = _value(item, "sellerType", "seller_type")
             images = item.get("images")
-            image = images[0] if isinstance(images, list) and images else _value(item, "image", "imageUrl", "image_url")
-            property_type = _value(item, "propertyType", "property_type", "category")
-            days_on_site = _value(item, "daysOnSite", "daysOnMarket", "days_on_market", "daysListed", "days_listed")
+            image = images[0] if isinstance(images, list) and images else _value(
+                item, "image", "imageUrl", "image_url"
+            )
 
             lead = {
                 "title": _value(item, "title", "name"),
@@ -78,14 +83,14 @@ def search_gumtree(location, max_items=4):
                 "city": _value(item, "city", "town"),
                 "region": _value(item, "region"),
                 "category": _value(item, "category", "propertyType", "property_type"),
-                "property_type": property_type,
+                "property_type": _value(item, "propertyType", "property_type", "category"),
                 "seller_type": seller_type,
                 "seller": seller_name,
                 "seller_name": seller_name,
                 "description": _value(item, "description", "details"),
                 "posted_date": _value(item, "postedAt", "postedDate", "posted_date", "datePosted"),
-                "days_on_market": days_on_site,
-                "days_on_site": days_on_site,
+                "days_on_market": _value(item, "daysOnSite", "daysOnMarket", "days_on_market", "daysListed", "days_listed"),
+                "days_on_site": _value(item, "daysOnSite", "daysOnMarket", "days_on_market", "daysListed", "days_listed"),
                 "url": _value(item, "url", "link", "listingUrl", "sourceUrl"),
                 "image": image,
                 "images": images if isinstance(images, list) else [],
@@ -99,7 +104,6 @@ def search_gumtree(location, max_items=4):
                 "urgent": item.get("urgent"),
                 "source": "gumtree"
             }
-
             leads.append(lead)
             print("🔎 SolidCode listing:", lead["title"])
             print("   Location:", lead["location"])
