@@ -112,8 +112,10 @@ def get_facebook_marketplace(
             run_input=run_input
         )
 
+        dataset_id = run.default_dataset_id
+
         dataset = client.dataset(
-            run["defaultDatasetId"]
+            dataset_id
         )
 
         leads = []
