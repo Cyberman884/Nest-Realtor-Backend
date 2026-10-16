@@ -5,7 +5,132 @@ APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 ACTOR_ID = "solidcode/gumtree-scraper"
 client = ApifyClient(APIFY_TOKEN)
 
+def _price_as_rand(value):
+    """Convert a listing price to a Rand amount."""
+    if value is None:
+        return None
 
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = (
+        str(value)
+        .upper()
+        .replace(",", "")
+        .replace("ZAR", "")
+        .replace("R", "")
+        .strip()
+    )
+
+    digits = "".join(
+        ch for ch in text if ch.isdigit() or ch == "."
+    )
+
+    try:
+        return float(digits) if digits else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_property_listing(item):
+    """Reject obvious non-property listings and prices below R250,000."""
+    title = str(item.get("title") or item.get("name") or "").lower()
+    description = str(item.get("description") or "").lower()
+    category = str(
+        item.get("category") or item.get("propertyType") or ""
+    ).lower()
+
+    text = f"{title} {description} {category}"
+
+    property_terms = (
+        "house",
+        "home",
+        "property",
+        "flat",
+        "apartment",
+        "townhouse",
+        "duplex",
+        "vacant land",
+        "plot",
+        "farm",
+        "estate",
+        "bedroom",
+        "for sale",
+    )
+
+    non_property_terms = (
+        "machine",
+        "slimming",
+        "cryolipolysis",
+        "ems machine",
+        "fat freezing",
+        "weight loss",
+        "phone",
+        "laptop",
+        "furniture",
+        "sofa",
+        "clothing",
+        "watch",
+        "camera",
+        "motorcycle",
+        "motorbike",
+        "parts",
+        "spares",
+    )
+
+    if any(term in text for term in non_property_terms):
+        return False
+
+    if not any(term in text for term in property_terms):
+        return False
+
+    price = _price_as_rand(
+        item.get("price")
+        or item.get("priceRaw")
+        or item.get("currentPrice")
+        or item.get("listingPrice")
+    )
+
+    if price is None or price < 250000:
+        return False
+
+    return True
+
+
+# Keep this loop inside your existing Apify-processing function.
+leads = []
+
+for item in dataset.iterate_items():
+    if not _is_property_listing(item):
+        print(
+            "Filtered non-property/low-price listing:",
+            item.get("title") or item.get("name")
+        )
+        continue
+
+    location_value = _value(
+        item,
+        "location",
+        "locationName",
+        "location_name",
+        "address",
+        "suburb",
+        "area",
+        "city",
+        "town",
+    )
+
+    seller_name = _value(
+        item,
+        "sellerName",
+        "seller_name",
+        "seller",
+    )
+
+    # KEEP YOUR EXISTING CODE HERE:
+    # Continue building the lead dictionary,
+    # processing the other fields, and appending each lead.
+    
 def _value(item, *keys):
     for key in keys:
         value = item.get(key)

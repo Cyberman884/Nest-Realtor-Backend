@@ -7,6 +7,61 @@ ACTOR_ID = "blackfalcondata/facebook-marketplace-scraper"
 
 client = ApifyClient(APIFY_TOKEN) if APIFY_TOKEN else None
 
+def _price_as_rand(value):
+    """Convert a listing price to a Rand amount."""
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value).upper().replace(",", "").replace("R", "").replace("ZAR", "").strip()
+
+    digits = "".join(ch for ch in text if ch.isdigit() or ch == ".")
+
+    try:
+        return float(digits) if digits else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_property_listing(item):
+    """Reject obvious non-property listings and prices below R250,000."""
+    title = str(item.get("title") or item.get("name") or "").lower()
+    description = str(item.get("description") or "").lower()
+    category = str(item.get("category") or item.get("propertyType") or "").lower()
+    text = f"{title} {description} {category}"
+
+    property_terms = (
+        "house", "home", "property", "flat", "apartment",
+        "townhouse", "duplex", "vacant land", "plot",
+        "farm", "estate", "bedroom", "for sale"
+    )
+
+    non_property_terms = (
+        "machine", "slimming", "cryolipolysis", "ems machine",
+        "fat freezing", "weight loss", "phone", "laptop",
+        "furniture", "sofa", "clothing", "watch", "camera",
+        "motorcycle", "motorbike", "parts", "spares"
+    )
+
+    if any(term in text for term in non_property_terms):
+        return False
+
+    if not any(term in text for term in property_terms):
+        return False
+
+    price = _price_as_rand(
+        item.get("price")
+        or item.get("priceRaw")
+        or item.get("currentPrice")
+        or item.get("listingPrice")
+    )
+
+    if price is None or price < 250000:
+        return False
+
+    return True
 
 def get_value(item, *paths):
     """Read a field, including nested fields."""
