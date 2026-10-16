@@ -22,7 +22,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 # It was also consuming Apify usage.
 #
 # We will re-enable it after the Gumtree pipeline works.
-FACEBOOK_ENABLED = False
+FACEBOOK_ENABLED = True
 
 
 # Keep Gumtree scraping small while testing.
