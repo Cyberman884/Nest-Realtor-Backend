@@ -196,4 +196,3 @@ def get_facebook_marketplace(
     except Exception as e:
         print("Facebook Marketplace error:", str(e))
         return []
-```
