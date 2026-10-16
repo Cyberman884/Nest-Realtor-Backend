@@ -1,182 +1,199 @@
-from apify_client import ApifyClient
 import os
+from apify_client import ApifyClient
 
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 
-client = ApifyClient(APIFY_TOKEN)
+ACTOR_ID = "blackfalcondata/facebook-marketplace-scraper"
 
-ACTOR_ID = "U5DUNxhH3qKt5PnCf"
-
-
-def build_marketplace_url(location):
-
-    location = location.lower().strip()
-
-    if location in [
-        "south africa",
-        "sa",
-        "rsa",
-        "all",
-        ""
-    ]:
-        return (
-            "https://www.facebook.com/"
-            "marketplace/southafrica/propertyforsale"
-        )
-
-    slug = location.replace(" ", "")
-
-    return (
-        f"https://www.facebook.com/"
-        f"marketplace/{slug}/propertyforsale"
-    )
+client = ApifyClient(APIFY_TOKEN) if APIFY_TOKEN else None
 
 
-def extract_location(item):
+def get_value(item, *paths):
+    """Read a field, including nested fields."""
+    for path in paths:
+        value = item
 
-    candidates = [
-        item.get("location"),
-        item.get("location_name"),
-        item.get("listing_location"),
-        item.get("marketplace_listing_location"),
-        item.get("address"),
-        item.get("city"),
-        item.get("town"),
-        item.get("suburb"),
-        item.get("locality"),
-        item.get("region"),
-    ]
+        for key in path.split("."):
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
 
-    for value in candidates:
-
-        if isinstance(value, dict):
-
-            value = (
-                value.get("name")
-                or value.get("city")
-                or value.get("town")
-                or value.get("address")
-                or value.get("formatted_address")
-            )
-
-        if value:
-            return str(value)
+        if value is not None and value != "":
+            return value
 
     return None
 
 
-def get_facebook_marketplace(location, max_items=20):
+def extract_location(item):
+    location = get_value(
+        item,
+        "locationText",
+        "location",
+        "location_name",
+        "listing_location",
+        "item_location",
+        "address",
+        "city",
+        "suburb",
+        "town",
+        "locality",
+        "region",
+    )
 
+    if isinstance(location, dict):
+        location = (
+            location.get("name")
+            or location.get("city")
+            or location.get("town")
+            or location.get("address")
+            or location.get("formatted_address")
+        )
+
+    if location:
+        return str(location)
+
+    city = get_value(item, "city")
+    state = get_value(item, "state")
+
+    if city and state:
+        return f"{city}, {state}"
+
+    return city or state
+
+
+def get_facebook_marketplace(
+    location,
+    max_items=20,
+    query="houses for sale"
+):
     try:
+        if not client:
+            raise ValueError("APIFY_TOKEN is missing")
 
-        url = build_marketplace_url(location)
+        if not ACTOR_ID:
+            raise ValueError("FACEBOOK_ACTOR_ID is missing")
 
-        print("🚀 Starting Facebook Marketplace")
-        print("📍 Requested location:", location)
-        print("🌐 Facebook URL:", url)
+        location = str(location or "").strip()
+
+        if not location:
+            raise ValueError("Location is required")
 
         run_input = {
-            "startUrls": [
-                {
-                    "url": url
-                }
-            ],
-            "resultsLimit": max_items,
-            "includeListingDetails": False
+            "availableOnly": True,
+            "browseWithoutQuery": False,
+            "compact": False,
+            "deliveryMethod": "any",
+            "descriptionFormat": "all",
+            "emitUnchanged": False,
+            "excludeEmptyFields": False,
+            "includeDetails": True,
+            "incrementalMode": False,
+            "location": location,
+            "maxResults": max_items,
+            "notifyOnlyChanges": False,
+            "query": str(query or "houses for sale").strip(),
+            "radiusKm": 20,
+            "sortBy": "relevance",
+            "strictQueryMatch": False,
+            "strictRadius": False,
+            "startUrls": [],
+            "conditions": [],
+            "categories": [],
+            "descriptionMaxLength": 0,
+            "notificationLimit": 5,
         }
+
+        print("Starting Black Falcon Facebook")
+        print("Facebook query:", run_input["query"])
+        print("Facebook location:", location)
 
         run = client.actor(ACTOR_ID).call(
             run_input=run_input
         )
 
-        print("RUN TYPE:", type(run))
-        print("RUN:", run)
-
         dataset = client.dataset(
-            run.default_dataset_id
+            run["defaultDatasetId"]
         )
 
         leads = []
 
         for item in dataset.iterate_items():
+            title = get_value(
+                item,
+                "title",
+                "marketplace_listing_title",
+                "name"
+            )
 
-            # DIAGNOSTIC INFORMATION
-            if len(leads) < 3:
+            url = get_value(
+                item,
+                "listingUrl",
+                "facebookUrl",
+                "url",
+                "listing_url",
+                "itemUrl"
+            )
 
-                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                print("🧪 FACEBOOK RAW ITEM")
-                print("🧪 RAW KEYS:", list(item.keys()))
-                print("🧪 RAW LOCATION:", item.get("location"))
-                print("🧪 RAW LOCATION NAME:", item.get("location_name"))
-                print("🧪 RAW LISTING LOCATION:", item.get("listing_location"))
-                print("🧪 RAW ADDRESS:", item.get("address"))
-                print("🧪 RAW CITY:", item.get("city"))
-                print("🧪 RAW TOWN:", item.get("town"))
-                print("🧪 RAW SUBURB:", item.get("suburb"))
-                print("🧪 RAW LOCALITY:", item.get("locality"))
-                print("🧪 RAW REGION:", item.get("region"))
-                print(
-                    "🧪 RAW TITLE:",
-                    item.get("marketplace_listing_title")
+            price = get_value(
+                item,
+                "price.formatted",
+                "price.formattedAmount",
+                "price.formatted_amount",
+                "listing_price.formatted_amount",
+                "price",
+                "formattedPrice"
+            )
+
+            if isinstance(price, dict):
+                price = (
+                    price.get("formatted")
+                    or price.get("formattedAmount")
+                    or price.get("amount")
+                    or price.get("value")
                 )
-                print(
-                    "🧪 RAW LISTING URL:",
-                    item.get("listingUrl")
-                )
-                print("🧪 FULL RAW ITEM:", item)
-                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-            listing_location = extract_location(item)
 
             lead = {
-                "title": item.get(
-                    "marketplace_listing_title"
+                "title": title or "Property for sale",
+                "price": price,
+                "url": url,
+                "facebook_url": get_value(
+                    item, "facebookUrl", "url", "listingUrl"
                 ),
-
-                "price": item.get(
-                    "listing_price.formatted_amount"
+                "image": get_value(
+                    item,
+                    "primaryPhotoUrl",
+                    "primary_listing_photo.photo_image_url",
+                    "image",
+                    "imageUrl"
                 ),
-
-                "url": item.get(
-                    "listingUrl"
+                "location": extract_location(item),
+                "description": get_value(
+                    item,
+                    "description",
+                    "redacted_description",
+                    "details"
                 ),
-
-                "facebook_url": item.get(
-                    "facebookUrl"
-                ),
-
-                "image": item.get(
-                    "primary_listing_photo.photo_image_url"
-                ),
-
-                "location": listing_location,
-
-                "source": "facebook_marketplace"
+                "source": "facebook_marketplace",
             }
 
             leads.append(lead)
 
         print(
-            f"✅ Facebook returned {len(leads)} listings"
-        )
-
-        locations_found = sum(
-            1 for lead in leads
-            if lead.get("location")
+            "Facebook listings returned:",
+            len(leads)
         )
 
         print(
-            f"📍 Facebook listings with location: "
-            f"{locations_found}/{len(leads)}"
+            "Facebook listings with location:",
+            sum(1 for lead in leads if lead["location"]),
+            "/",
+            len(leads)
         )
 
         return leads
 
     except Exception as e:
-
-        print(
-            "❌ Facebook Marketplace Error:",
-            str(e)
-        )
-
+        print("Facebook Marketplace error:", str(e))
         return []
+```

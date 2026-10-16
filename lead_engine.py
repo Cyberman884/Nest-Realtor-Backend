@@ -4,7 +4,7 @@ from typing import Dict
 
 from filter_leads import filter_leads
 from gumtree import search_gumtree
-
+from facebook_marketplace import get_facebook_marketplace
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
@@ -337,24 +337,36 @@ def generate_leads(
 
 
     # ======================================================
-    # FACEBOOK
+    # FACEBOOK MARKETPLACE - BLACK FALCON
     # ======================================================
 
     if FACEBOOK_ENABLED:
+        print("Starting Facebook Marketplace")
 
-        print(
-            "⚠️ Facebook is enabled."
-        )
+        try:
+            facebook_leads = get_facebook_marketplace(
+                location=location,
+                max_items=20,
+                query=query or "houses for sale"
+            )
 
-        # Facebook is intentionally not called
-        # in this test version.
+            source_counts["facebook_marketplace"] = len(
+                facebook_leads
+            )
+
+            raw_leads.extend(facebook_leads)
+
+            print(
+                "Facebook raw listings added:",
+                len(facebook_leads)
+            )
+
+        except Exception as e:
+            print("Facebook integration error:", str(e))
 
     else:
-
-        print(
-            "⏸️ Facebook Marketplace disabled "
-            "for current testing."
-        )
+        print("Facebook Marketplace disabled")
+```
 
 
     # ======================================================
