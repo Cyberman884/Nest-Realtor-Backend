@@ -366,7 +366,6 @@ def generate_leads(
 
     else:
         print("Facebook Marketplace disabled")
-```
 
 
     # ======================================================
