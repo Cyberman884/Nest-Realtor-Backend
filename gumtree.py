@@ -10,77 +10,59 @@ def _price_as_rand(value):
     if value is None:
         return None
 
+    if isinstance(value, dict):
+        value = (
+            value.get("formatted")
+            or value.get("formattedAmount")
+            or value.get("formatted_amount")
+            or value.get("amount")
+            or value.get("value")
+            or value.get("price")
+        )
+        if value is None:
+            return None
+
     if isinstance(value, (int, float)):
         return float(value)
 
-    text = (
-        str(value)
-        .upper()
-        .replace(",", "")
-        .replace("ZAR", "")
-        .replace("R", "")
-        .strip()
-    )
+    text = str(value).upper().replace(",", "").replace("ZAR", "").replace("R", "").strip()
+    multiplier = 1
+    if "MILLION" in text or text.endswith("M"):
+        multiplier = 1_000_000
+    elif "THOUSAND" in text or text.endswith("K"):
+        multiplier = 1_000
 
-    digits = "".join(
-        ch for ch in text if ch.isdigit() or ch == "."
-    )
-
+    digits = "".join(ch for ch in text if ch.isdigit() or ch == ".")
     try:
-        return float(digits) if digits else None
+        return float(digits) * multiplier if digits else None
     except (ValueError, TypeError):
         return None
 
 
 def _is_property_listing(item):
-    """Reject obvious non-property listings and prices below R250,000."""
-    title = str(item.get("title") or item.get("name") or "").lower()
-    description = str(item.get("description") or "").lower()
-    category = str(
-        item.get("category") or item.get("propertyType") or ""
-    ).lower()
-
+    """Keep likely property listings priced at R250,000 or more."""
+    title = str(item.get("title") or item.get("name") or item.get("marketplace_listing_title") or "").lower()
+    description = str(item.get("description") or item.get("redacted_description") or item.get("details") or "").lower()
+    category_value = item.get("category") or item.get("propertyType") or item.get("property_type") or ""
+    if isinstance(category_value, dict):
+        category_value = category_value.get("name") or category_value.get("label") or str(category_value)
+    category = str(category_value).lower()
     text = f"{title} {description} {category}"
 
     property_terms = (
-        "house",
-        "home",
-        "property",
-        "flat",
-        "apartment",
-        "townhouse",
-        "duplex",
-        "vacant land",
-        "plot",
-        "farm",
-        "estate",
-        "bedroom",
-        "for sale",
+        "house", "home", "property", "real estate", "residential",
+        "flat", "apartment", "townhouse", "duplex", "vacant land",
+        "plot", "farm", "estate", "bedroom", "for sale", "land for sale",
     )
-
     non_property_terms = (
-        "machine",
-        "slimming",
-        "cryolipolysis",
-        "ems machine",
-        "fat freezing",
-        "weight loss",
-        "phone",
-        "laptop",
-        "furniture",
-        "sofa",
-        "clothing",
-        "watch",
-        "camera",
-        "motorcycle",
-        "motorbike",
-        "parts",
-        "spares",
+        "machine", "slimming", "cryolipolysis", "ems machine",
+        "fat freezing", "weight loss", "phone", "laptop",
+        "furniture", "sofa", "clothing", "watch", "camera",
+        "motorcycle", "motorbike", "parts", "spares",
     )
 
     if any(term in text for term in non_property_terms):
         return False
-
     if not any(term in text for term in property_terms):
         return False
 
@@ -89,48 +71,11 @@ def _is_property_listing(item):
         or item.get("priceRaw")
         or item.get("currentPrice")
         or item.get("listingPrice")
+        or item.get("formattedPrice")
+        or item.get("listing_price")
     )
+    return price is not None and price >= 250000
 
-    if price is None or price < 250000:
-        return False
-
-    return True
-
-
-# Keep this loop inside your existing Apify-processing function.
-leads = []
-
-for item in dataset.iterate_items():
-    if not _is_property_listing(item):
-        print(
-            "Filtered non-property/low-price listing:",
-            item.get("title") or item.get("name")
-        )
-        continue
-
-    location_value = _value(
-        item,
-        "location",
-        "locationName",
-        "location_name",
-        "address",
-        "suburb",
-        "area",
-        "city",
-        "town",
-    )
-
-    seller_name = _value(
-        item,
-        "sellerName",
-        "seller_name",
-        "seller",
-    )
-
-    # KEEP YOUR EXISTING CODE HERE:
-    # Continue building the lead dictionary,
-    # processing the other fields, and appending each lead.
-    
 def _value(item, *keys):
     for key in keys:
         value = item.get(key)
@@ -187,6 +132,13 @@ def search_gumtree(location, max_items=5):
         leads = []
 
         for item in dataset.iterate_items():
+            if not _is_property_listing(item):
+                print(
+                    "Filtered Gumtree non-property/low-price listing:",
+                    item.get("title") or item.get("name"),
+                )
+                continue
+
             location_value = _value(item, "location", "locationName", "location_name",
                                      "address", "suburb", "area", "city", "town")
             seller_name = _value(item, "sellerName", "seller_name", "seller")

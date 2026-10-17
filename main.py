@@ -1,7 +1,9 @@
 import logging
 import re
+import os
+import requests
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -98,6 +100,104 @@ def health():
     return {
         "success": True,
         "status": "healthy"
+    }
+
+
+
+class CheckoutRequest(BaseModel):
+    plan: str
+    amount: int
+    currency: str = "ZAR"
+    success_url: str = "https://nest-realtor.netlify.app/dashboard.html"
+    cancel_url: str = "https://nest-realtor.netlify.app/pricing.html"
+
+
+@app.post("/create_checkout")
+def create_checkout(payload: CheckoutRequest):
+    """
+    Create a hosted Yoco checkout. The Yoco secret key stays in Render
+    environment variables and is never sent to the browser.
+    """
+    secret_key = os.getenv("YOCO_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(
+            status_code=500,
+            detail="YOCO_SECRET_KEY is not configured on the backend."
+        )
+
+    # Never trust the amount supplied by the browser; derive it from the plan.
+    plan_amounts = {
+        "Starter": 179900,
+        "Growth": 359900,
+        "Professional": 549900,
+    }
+    amount = plan_amounts.get(payload.plan)
+    if amount is None:
+        raise HTTPException(status_code=400, detail="Invalid subscription plan.")
+
+    if payload.currency.upper() != "ZAR":
+        raise HTTPException(status_code=400, detail="Only ZAR payments are supported.")
+
+    request_body = {
+        "amount": amount,
+        "currency": "ZAR",
+        "successRedirectUrl": payload.success_url,
+        "cancelRedirectUrl": payload.cancel_url,
+        "failureRedirectUrl": payload.cancel_url,
+        "metadata": {
+            "plan": payload.plan,
+            "product": "Nest Realtor subscription"
+        },
+        "description": f"Nest Realtor {payload.plan} subscription"
+    }
+
+    try:
+        yoco_response = requests.post(
+            "https://payments.yoco.com/api/checkouts",
+            headers={
+                "Authorization": secret_key,
+                "Content-Type": "application/json",
+            },
+            json=request_body,
+            timeout=25,
+        )
+    except requests.RequestException:
+        logger.exception("Could not connect to Yoco Checkout API")
+        raise HTTPException(
+            status_code=502,
+            detail="Could not connect to Yoco. Please try again."
+        )
+
+    try:
+        data = yoco_response.json()
+    except ValueError:
+        data = {}
+
+    if not yoco_response.ok:
+        logger.error(
+            "Yoco checkout creation failed: status=%s response=%s",
+            yoco_response.status_code,
+            {k: v for k, v in data.items() if k.lower() not in {"authorization", "secret", "token"}}
+        )
+        message = (
+            data.get("message")
+            or data.get("error")
+            or "Yoco could not create the checkout. Check your Yoco key and domain setup."
+        )
+        raise HTTPException(status_code=502, detail=str(message))
+
+    redirect_url = data.get("redirectUrl") or data.get("redirect_url")
+    if not redirect_url:
+        logger.error("Yoco response did not contain redirectUrl; keys=%s", list(data.keys()))
+        raise HTTPException(
+            status_code=502,
+            detail="Yoco did not return a checkout URL."
+        )
+
+    return {
+        "success": True,
+        "checkoutId": data.get("id"),
+        "redirectUrl": redirect_url,
     }
 
 
