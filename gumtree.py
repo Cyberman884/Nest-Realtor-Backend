@@ -40,33 +40,43 @@ def _price_as_rand(value):
 
 
 def _is_property_listing(item):
-    """Keep likely property listings priced at R250,000 or more."""
-    title = str(item.get("title") or item.get("name") or item.get("marketplace_listing_title") or "").lower()
-    description = str(item.get("description") or item.get("redacted_description") or item.get("details") or "").lower()
-    category_value = item.get("category") or item.get("propertyType") or item.get("property_type") or ""
-    if isinstance(category_value, dict):
-        category_value = category_value.get("name") or category_value.get("label") or str(category_value)
-    category = str(category_value).lower()
-    text = f"{title} {description} {category}"
+    """Fail closed: only accept clearly titled property listings at R250,000+."""
+    # Use the TITLE as the main evidence. Description-only matches are unsafe:
+    # a non-property product can mention a house or property in its description.
+    title = str(
+        item.get("title")
+        or item.get("name")
+        or item.get("marketplace_listing_title")
+        or ""
+    ).strip().lower()
 
-    property_terms = (
-        "house", "home", "property", "real estate", "residential",
-        "flat", "apartment", "townhouse", "duplex", "vacant land",
-        "plot", "farm", "estate", "bedroom", "for sale", "land for sale",
-    )
+    if not title:
+        return False
+
+    # Reject obvious non-property products/services before checking property terms.
     non_property_terms = (
         "machine", "slimming", "cryolipolysis", "ems machine",
-        "fat freezing", "weight loss", "phone", "laptop",
-        "furniture", "sofa", "clothing", "watch", "camera",
-        "motorcycle", "motorbike", "parts", "spares",
+        "fat freezing", "weight loss", "phone", "laptop", "furniture",
+        "sofa", "clothing", "watch", "camera", "motorcycle", "motorbike",
+        "car for", "vehicle", "parts", "spares", "appliance", "service",
+        "job vacancy", "for rent furniture",
     )
-
-    if any(term in text for term in non_property_terms):
-        return False
-    if not any(term in text for term in property_terms):
+    if any(term in title for term in non_property_terms):
         return False
 
-    price = _price_as_rand(
+    # These terms must appear in the title itself; generic "for sale" alone
+    # is deliberately not enough to qualify a listing as property.
+    property_terms = (
+        "house", "houses", "home for sale", "property for sale",
+        "real estate for sale", "residential property", "flat", "apartment",
+        "townhouse", "duplex", "vacant land", "land for sale", "plot",
+        "farm", "bedroom", "bedrooms", "stand for sale", "residential stand",
+    )
+    if not any(term in title for term in property_terms):
+        return False
+
+    # Read common price fields, including nested/formatted actor output.
+    price_value = (
         item.get("price")
         or item.get("priceRaw")
         or item.get("currentPrice")
@@ -74,7 +84,11 @@ def _is_property_listing(item):
         or item.get("formattedPrice")
         or item.get("listing_price")
     )
-    return price is not None and price >= 250000
+    price = _price_as_rand(price_value)
+    if price is None or price < 250000:
+        return False
+
+    return True
 
 def _value(item, *keys):
     for key in keys:
