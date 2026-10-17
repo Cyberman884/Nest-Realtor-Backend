@@ -42,9 +42,7 @@ def _price_as_rand(value):
 
 
 def _is_property_listing(item):
-    """Fail closed: only accept clearly titled property listings at R250,000+."""
-    # Use the TITLE as the main evidence. Description-only matches are unsafe:
-    # a non-property product can mention a house or property in its description.
+    """Accept clearly titled property listings; reject known prices below R250,000."""
     title = str(
         item.get("title")
         or item.get("name")
@@ -55,7 +53,6 @@ def _is_property_listing(item):
     if not title:
         return False
 
-    # Reject obvious non-property products/services before checking property terms.
     non_property_terms = (
         "machine", "slimming", "cryolipolysis", "ems machine",
         "fat freezing", "weight loss", "phone", "laptop", "furniture",
@@ -66,8 +63,6 @@ def _is_property_listing(item):
     if any(term in title for term in non_property_terms):
         return False
 
-    # These terms must appear in the title itself; generic "for sale" alone
-    # is deliberately not enough to qualify a listing as property.
     property_terms = (
         "house", "houses", "home for sale", "property for sale",
         "real estate for sale", "residential property", "flat", "apartment",
@@ -77,7 +72,6 @@ def _is_property_listing(item):
     if not any(term in title for term in property_terms):
         return False
 
-    # Read common price fields, including nested/formatted actor output.
     price_value = (
         item.get("price")
         or item.get("priceRaw")
@@ -87,7 +81,9 @@ def _is_property_listing(item):
         or item.get("listing_price")
     )
     price = _price_as_rand(price_value)
-    if price is None or price < 250000:
+    # Facebook sometimes omits price in the dataset even when the actor UI shows it.
+    # Keep clearly titled property listings if price is missing; reject only a known low price.
+    if price is not None and price < 250000:
         return False
 
     return True
@@ -110,19 +106,31 @@ def get_value(item, *paths):
 
 
 def extract_location(item):
+    """Extract Facebook's location from common flat and nested output fields."""
     location = get_value(
         item,
         "locationText",
-        "location",
+        "location.text",
+        "location.name",
+        "location.city",
+        "location.town",
+        "location.address",
+        "location.formatted_address",
+        "locationName",
         "location_name",
         "listing_location",
         "item_location",
+        "marketplace_listing_location.name",
+        "marketplace_listing_location.city",
+        "marketplace_listing_location.address",
+        "marketplace_listing_location.location_text",
         "address",
         "city",
         "suburb",
         "town",
         "locality",
         "region",
+        "state",
     )
 
     if isinstance(location, dict):
@@ -132,19 +140,40 @@ def extract_location(item):
             or location.get("town")
             or location.get("address")
             or location.get("formatted_address")
+            or location.get("location_text")
+            or location.get("text")
         )
 
+    if isinstance(location, (list, tuple)):
+        location = ", ".join(str(part) for part in location if part)
+
     if location:
-        return str(location)
+        return str(location).strip()
+
+    # Some actor outputs place the location under a listing or seller object.
+    fallback = get_value(
+        item,
+        "marketplace_listing_location",
+        "seller_location",
+        "sellerLocation",
+    )
+    if isinstance(fallback, dict):
+        fallback = (
+            fallback.get("name")
+            or fallback.get("city")
+            or fallback.get("town")
+            or fallback.get("address")
+            or fallback.get("formatted_address")
+            or fallback.get("location_text")
+        )
+    if fallback:
+        return str(fallback).strip()
 
     city = get_value(item, "city")
     state = get_value(item, "state")
-
     if city and state:
         return f"{city}, {state}"
-
     return city or state
-
 
 def get_facebook_marketplace(
     location,
@@ -246,6 +275,21 @@ def get_facebook_marketplace(
                     or price.get("value")
                 )
 
+            extracted_location = extract_location(item)
+            if not extracted_location:
+                print(
+                    "Facebook location missing; available location keys:",
+                    {
+                        key: item.get(key)
+                        for key in (
+                            "location", "locationText", "locationName",
+                            "location_name", "marketplace_listing_location",
+                            "seller_location", "city", "town", "suburb", "address",
+                        )
+                        if item.get(key) not in (None, "", {}, [])
+                    },
+                )
+
             lead = {
                 "title": title or "Property for sale",
                 "price": price,
@@ -260,7 +304,7 @@ def get_facebook_marketplace(
                     "image",
                     "imageUrl"
                 ),
-                "location": extract_location(item),
+                "location": extracted_location,
                 "description": get_value(
                     item,
                     "description",
