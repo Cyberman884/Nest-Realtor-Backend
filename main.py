@@ -118,7 +118,7 @@ def create_checkout(payload: CheckoutRequest):
     Create a hosted Yoco checkout. The Yoco secret key stays in Render
     environment variables and is never sent to the browser.
     """
-    secret_key = os.getenv("YOCO_SECRET_KEY")
+    secret_key = (os.getenv("YOCO_SECRET_KEY") or "").strip()
     if not secret_key:
         raise HTTPException(
             status_code=500,
@@ -155,7 +155,7 @@ def create_checkout(payload: CheckoutRequest):
         yoco_response = requests.post(
             "https://payments.yoco.com/api/checkouts",
             headers={
-                "Authorization": secret_key,
+                "Authorization": f"Bearer {secret_key}",
                 "Content-Type": "application/json",
             },
             json=request_body,
