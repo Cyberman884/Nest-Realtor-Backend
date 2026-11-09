@@ -6,7 +6,7 @@ Facebook Marketplace, or the existing filter_leads pipeline.
 What it does
 ------------
 * Runs one OpenAI Responses API web-search job for each configured marketplace.
-* Asks the model to find Johannesburg-area property sale advertisements and
+* Asks the model to find property-sale advertisements in the requested location and
   extract only information supported by the source page/search result.
 * Normalises results into a common Nest Realtor lead shape.
 * Deduplicates repeated URLs and likely duplicate property advertisements.
@@ -230,11 +230,10 @@ Rules:
         "tools": [{
             "type": "web_search",
             "search_context_size": "medium",
+            "external_web_access": True,
             "user_location": {
                 "type": "approximate",
                 "country": "ZA",
-                "city": location.split(",")[0].strip() or "Johannesburg",
-                "region": "Gauteng",
                 "timezone": "Africa/Johannesburg",
             },
         }],
@@ -307,7 +306,9 @@ def _normalise_lead(raw: Dict[str, Any], source: Dict[str, str], location: str) 
         "listing_url": url,
         "source": source["key"],
         "source_name": source["name"],
-        "location": _clean_text(lead.get("address") or lead.get("suburb") or lead.get("city") or location),
+        # Do not fill a missing property location with the search target.
+        # That would make an unlocated listing look location-verified downstream.
+        "location": _clean_text(lead.get("address") or lead.get("suburb") or lead.get("city")),
         "location_verified": bool(lead.get("address") or lead.get("suburb") or lead.get("city")),
         "supplemental": False,
         "discovery_method": "openai_web_search",
@@ -467,15 +468,19 @@ def generate_discovery_leads(
     source_counts = {result["source"]: result.get("raw_count", 0) for result in source_results}
     successful_sources = [
         result["source"] for result in source_results
-        if result.get("status") in ("searched", "no_results")
+        if result.get("status") in ("searched", "no_results", "source_unavailable", "uncertain")
     ]
     errors = [
         {"source": r["source"], "source_name": r["source_name"], "error": r.get("error")}
         for r in source_results if r.get("status") == "error"
     ]
 
+    # A run is successful only if at least one source completed an API search.
+    # A successful API call can legitimately return zero listings.
+    run_success = any(result.get("status") != "error" for result in source_results)
+
     return {
-        "success": True,
+        "success": run_success,
         "engine": "openai_multi_source_discovery",
         "requested_location": location,
         "property_type": property_type,
@@ -487,6 +492,7 @@ def generate_discovery_leads(
         "leads": combined,
         "source_diagnostics": source_results,
         "errors": errors,
+        "model": OPENAI_MODEL,
         "exclusivity_note": (
             "A private-owner advertisement is not an exclusive mandate. "
             "Only explicit documentary evidence is classified as verified_exclusive."
