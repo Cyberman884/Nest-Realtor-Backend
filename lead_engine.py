@@ -22,7 +22,7 @@ FACEBOOK_ENABLED = os.getenv("FACEBOOK_ENABLED", "true").strip().lower() in ("1"
 GUMTREE_MAX_ITEMS = int(os.getenv("GUMTREE_MAX_ITEMS", "4"))
 FACEBOOK_MAX_ITEMS = int(os.getenv("FACEBOOK_MAX_ITEMS", "20"))
 
-# Discovery runs when enabled and OPENAI_API_KEY is configured.
+# Discovery runs when enabled and SERPER_API_KEY is configured.
 DISCOVERY_ENABLED = os.getenv("DISCOVERY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 DISCOVERY_MAX_RESULTS_PER_SOURCE = int(os.getenv("DISCOVERY_MAX_RESULTS_PER_SOURCE", "5"))
 
@@ -30,7 +30,7 @@ DISCOVERY_MAX_RESULTS_PER_SOURCE = int(os.getenv("DISCOVERY_MAX_RESULTS_PER_SOUR
 print(
     "DISCOVERY CONFIG | enabled:", DISCOVERY_ENABLED,
     "| module_imported:", bool(generate_discovery_leads),
-    "| api_key_present:", bool((os.getenv("OPENAI_API_KEY") or "").strip()),
+    "| serper_key_present:", bool((os.getenv("SERPER_API_KEY") or "").strip()),
     "| import_error:", DISCOVERY_IMPORT_ERROR or "none",
     flush=True,
 )
@@ -111,7 +111,7 @@ def _normalise_discovery_record(record: Dict[str, Any]) -> Dict[str, Any]:
         lead.get("address") or lead.get("suburb") or
         lead.get("city") or lead.get("location") or ""
     )
-    source = lead.get("source") or "openai_discovery"
+    source = lead.get("source") or "serper_discovery"
 
     lead["title"] = title
     lead["name"] = lead.get("name") or title
@@ -123,7 +123,7 @@ def _normalise_discovery_record(record: Dict[str, Any]) -> Dict[str, Any]:
     lead["seller_type"] = lead.get("seller_type") or lead.get("sellerType") or ""
     lead["source"] = source
     lead["discovery_source"] = source
-    lead["discovery_method"] = lead.get("discovery_method") or "openai_web_search"
+    lead["discovery_method"] = lead.get("discovery_method") or "serper_google_search"
     lead["supplemental"] = False
     # A private-owner advert is not automatically an exclusive mandate.
     lead["exclusivity_verified"] = bool(
@@ -204,7 +204,7 @@ def generate_leads(query: str, location: str) -> Dict:
     }
     discovery_result: Dict[str, Any] = {
         "success": False,
-        "engine": "openai_multi_source_discovery",
+        "engine": "serper_multi_source_discovery",
         "count": 0,
         "sources": [],
         "source_counts": {},
@@ -212,10 +212,10 @@ def generate_leads(query: str, location: str) -> Dict:
         "errors": [],
     }
 
-    # 1. OpenAI public-web discovery across the configured marketplace targets.
+    # 1. Serper public-web discovery across the 11 configured marketplace targets.
     if DISCOVERY_ENABLED and generate_discovery_leads:
-        if os.getenv("OPENAI_API_KEY"):
-            print("Starting OpenAI discovery pipeline", flush=True)
+        if (os.getenv("SERPER_API_KEY") or "").strip():
+            print("Starting Serper discovery pipeline", flush=True)
             try:
                 discovery_result = generate_discovery_leads(
                     location=location,
@@ -233,12 +233,12 @@ def generate_leads(query: str, location: str) -> Dict:
                 for source, count in (discovery_result.get("source_counts") or {}).items():
                     source_counts[source] = int(count or 0)
                 raw_leads.extend(raw_discovery_leads)
-                print("OpenAI model:", discovery_result.get("model") or os.getenv("OPENAI_MODEL") or "gpt-6-astra", flush=True)
-                print("OpenAI discovery candidates added:", len(raw_discovery_leads), flush=True)
+                print("Search provider:", discovery_result.get("search_provider") or "Serper", flush=True)
+                print("Serper discovery candidates added:", len(raw_discovery_leads), flush=True)
                 for diagnostic in discovery_result.get("source_diagnostics", []):
                     if isinstance(diagnostic, dict):
                         print(
-                            "OpenAI source:", diagnostic.get("source_name", diagnostic.get("source")),
+                            "Serper source:", diagnostic.get("source_name", diagnostic.get("source")),
                             "| status:", diagnostic.get("status"),
                             "| leads:", diagnostic.get("raw_count", 0),
                             "| seconds:", diagnostic.get("duration_seconds", 0),
@@ -246,23 +246,23 @@ def generate_leads(query: str, location: str) -> Dict:
                             "| error:", diagnostic.get("error", ""),
                         )
                 if discovery_result.get("error"):
-                    print("OpenAI discovery warning:", discovery_result.get("error"))
+                    print("Serper discovery warning:", discovery_result.get("error"))
             except Exception as exc:
                 discovery_result = dict(discovery_result)
                 discovery_result["error"] = str(exc)
-                print("OpenAI discovery integration error:", str(exc))
+                print("Serper discovery integration error:", str(exc))
         else:
-            discovery_result["error"] = "OPENAI_API_KEY is not configured"
-            print("OpenAI discovery skipped: OPENAI_API_KEY is not configured", flush=True)
+            discovery_result["error"] = "SERPER_API_KEY is not configured"
+            print("Serper discovery skipped: SERPER_API_KEY is not configured", flush=True)
     elif not DISCOVERY_ENABLED:
         discovery_result["error"] = "Discovery disabled by DISCOVERY_ENABLED"
-        print("OpenAI discovery skipped: DISCOVERY_ENABLED is false", flush=True)
+        print("Serper discovery skipped: DISCOVERY_ENABLED is false", flush=True)
     elif DISCOVERY_IMPORT_ERROR:
         discovery_result["error"] = DISCOVERY_IMPORT_ERROR
-        print("OpenAI discovery import failed:", DISCOVERY_IMPORT_ERROR, flush=True)
+        print("Serper discovery import failed:", DISCOVERY_IMPORT_ERROR, flush=True)
     else:
         discovery_result["error"] = "Discovery function is unavailable for an unknown reason"
-        print("OpenAI discovery skipped: function unavailable for an unknown reason", flush=True)
+        print("Serper discovery skipped: function unavailable for an unknown reason", flush=True)
 
     # 2. Existing Gumtree source (unchanged call contract).
     print("Starting Gumtree")
@@ -342,7 +342,7 @@ def generate_leads(query: str, location: str) -> Dict:
         "requested_location": location,
         "discovery": {
             "success": bool(discovery_result.get("success")),
-            "engine": discovery_result.get("engine", "openai_multi_source_discovery"),
+            "engine": discovery_result.get("engine", "serper_multi_source_discovery"),
             "count": discovery_result.get("count", len(raw_discovery_leads)),
             "sources": discovery_result.get("sources", []),
             "successful_sources": discovery_result.get("successful_sources", []),
