@@ -775,16 +775,17 @@ def filter_leads(raw_places, requested_area=None):
             score += 12
         if price_history and not price_data["detected"]:
             score += 8
-        score = max(0, min(100, int(score)))
 
-        # Qualification gate: a normal advert with no seller-intent evidence
-        # is not sold as a seller opportunity. Keep the user's score weights.
+        # Do not make seller-intent evidence a hard requirement.
+        # A valid residential listing in the requested area can still be
+        # surfaced as a POTENTIAL opportunity while stronger signals rank higher.
         has_signal = bool(
             seller_score > 0 or price_data["detected"] or market_data["detected"]
             or source_count > 1 or relisted or price_history
         )
         if not has_signal:
-            continue
+            score = max(score, 15)  # baseline score for an unverified public listing
+        score = max(0, min(100, int(score)))
 
         if score >= 80:
             priority = "Priority"
@@ -798,6 +799,12 @@ def filter_leads(raw_places, requested_area=None):
         # Prefer the strongest/most complete listing URL and retain all sources.
         url = _first(place, ["url", "link", "website", "listing_url"])
         reasoning = _build_reasoning(place, seller_reason, price_data, market_data)
+        if not has_signal:
+            reasoning.append({
+                "signal": "Public residential listing",
+                "detail": "Valid residential listing in the requested area. Seller intent has not yet been independently verified.",
+                "evidence": {"seller_intent_verified": False},
+            })
         if source_count > 1:
             reasoning.append({
                 "signal": "Multi-source evidence",
@@ -827,7 +834,10 @@ def filter_leads(raw_places, requested_area=None):
             "source_count": source_count,
             "priority": priority,
             "opportunity_priority": priority,
-            "opportunity_type": "Qualified Seller Opportunity",
+            "opportunity_type": (
+                "Qualified Seller Opportunity" if has_signal
+                else "Potential Seller Opportunity"
+            ),
             "seller_signal": seller_reason,
             "price_reduction_detected": price_data["detected"],
             "price_reduction_percentage": price_data["percentage"],
