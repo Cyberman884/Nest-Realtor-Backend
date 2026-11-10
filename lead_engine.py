@@ -26,6 +26,15 @@ FACEBOOK_MAX_ITEMS = int(os.getenv("FACEBOOK_MAX_ITEMS", "20"))
 DISCOVERY_ENABLED = os.getenv("DISCOVERY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 DISCOVERY_MAX_RESULTS_PER_SOURCE = int(os.getenv("DISCOVERY_MAX_RESULTS_PER_SOURCE", "5"))
 
+# Explicit startup diagnostics: never print the API key itself.
+print(
+    "DISCOVERY CONFIG | enabled:", DISCOVERY_ENABLED,
+    "| module_imported:", bool(generate_discovery_leads),
+    "| api_key_present:", bool((os.getenv("OPENAI_API_KEY") or "").strip()),
+    "| import_error:", DISCOVERY_IMPORT_ERROR or "none",
+    flush=True,
+)
+
 
 def get_place_details(place_id):
     try:
@@ -206,22 +215,36 @@ def generate_leads(query: str, location: str) -> Dict:
     # 1. OpenAI public-web discovery across the configured marketplace targets.
     if DISCOVERY_ENABLED and generate_discovery_leads:
         if os.getenv("OPENAI_API_KEY"):
-            print("Starting OpenAI discovery pipeline")
+            print("Starting OpenAI discovery pipeline", flush=True)
             try:
                 discovery_result = generate_discovery_leads(
                     location=location,
                     property_type=query,
                     max_results_per_source=DISCOVERY_MAX_RESULTS_PER_SOURCE,
                 ) or discovery_result
+                if not isinstance(discovery_result, dict):
+                    raise RuntimeError("Discovery engine returned an unexpected response type")
+
                 raw_discovery_leads = [
                     _normalise_discovery_record(item)
-                    for item in discovery_result.get("leads", [])
+                    for item in (discovery_result.get("leads") or [])
                     if isinstance(item, dict)
                 ]
                 for source, count in (discovery_result.get("source_counts") or {}).items():
                     source_counts[source] = int(count or 0)
                 raw_leads.extend(raw_discovery_leads)
-                print("OpenAI discovery candidates added:", len(raw_discovery_leads))
+                print("OpenAI model:", discovery_result.get("model") or os.getenv("OPENAI_MODEL") or "gpt-6-astra", flush=True)
+                print("OpenAI discovery candidates added:", len(raw_discovery_leads), flush=True)
+                for diagnostic in discovery_result.get("source_diagnostics", []):
+                    if isinstance(diagnostic, dict):
+                        print(
+                            "OpenAI source:", diagnostic.get("source_name", diagnostic.get("source")),
+                            "| status:", diagnostic.get("status"),
+                            "| leads:", diagnostic.get("raw_count", 0),
+                            "| seconds:", diagnostic.get("duration_seconds", 0),
+                            "| note:", diagnostic.get("notes", ""),
+                            "| error:", diagnostic.get("error", ""),
+                        )
                 if discovery_result.get("error"):
                     print("OpenAI discovery warning:", discovery_result.get("error"))
             except Exception as exc:
@@ -230,11 +253,16 @@ def generate_leads(query: str, location: str) -> Dict:
                 print("OpenAI discovery integration error:", str(exc))
         else:
             discovery_result["error"] = "OPENAI_API_KEY is not configured"
-            print("OpenAI discovery skipped: OPENAI_API_KEY is not configured")
+            print("OpenAI discovery skipped: OPENAI_API_KEY is not configured", flush=True)
     elif not DISCOVERY_ENABLED:
         discovery_result["error"] = "Discovery disabled by DISCOVERY_ENABLED"
+        print("OpenAI discovery skipped: DISCOVERY_ENABLED is false", flush=True)
     elif DISCOVERY_IMPORT_ERROR:
         discovery_result["error"] = DISCOVERY_IMPORT_ERROR
+        print("OpenAI discovery import failed:", DISCOVERY_IMPORT_ERROR, flush=True)
+    else:
+        discovery_result["error"] = "Discovery function is unavailable for an unknown reason"
+        print("OpenAI discovery skipped: function unavailable for an unknown reason", flush=True)
 
     # 2. Existing Gumtree source (unchanged call contract).
     print("Starting Gumtree")
