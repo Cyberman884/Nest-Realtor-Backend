@@ -1,1109 +1,357 @@
-# filter_leads.py
+import os
+import requests
+from typing import Dict, List, Any
 
-import re
-from difflib import SequenceMatcher
+from filter_leads import filter_leads
+from gumtree import search_gumtree
+from facebook_marketplace import get_facebook_marketplace
+
+# Discovery is an optional add-on. If its module or API configuration is
+# unavailable, the existing Gumtree/Facebook/Google pipeline still runs.
+try:
+    from discovery_engine import generate_discovery_leads
+    DISCOVERY_IMPORT_ERROR = None
+except Exception as import_error:
+    generate_discovery_leads = None
+    DISCOVERY_IMPORT_ERROR = str(import_error)
+
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# Keep the existing source settings intact.
+FACEBOOK_ENABLED = os.getenv("FACEBOOK_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+GUMTREE_MAX_ITEMS = int(os.getenv("GUMTREE_MAX_ITEMS", "4"))
+FACEBOOK_MAX_ITEMS = int(os.getenv("FACEBOOK_MAX_ITEMS", "20"))
+
+# Discovery runs when enabled and OPENAI_API_KEY is configured.
+DISCOVERY_ENABLED = os.getenv("DISCOVERY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+DISCOVERY_MAX_RESULTS_PER_SOURCE = int(os.getenv("DISCOVERY_MAX_RESULTS_PER_SOURCE", "5"))
+
+# Explicit startup diagnostics: never print the API key itself.
+print(
+    "DISCOVERY CONFIG | enabled:", DISCOVERY_ENABLED,
+    "| module_imported:", bool(generate_discovery_leads),
+    "| api_key_present:", bool((os.getenv("OPENAI_API_KEY") or "").strip()),
+    "| import_error:", DISCOVERY_IMPORT_ERROR or "none",
+    flush=True,
+)
 
 
-# ============================================================
-# HELPERS
-# ============================================================
-
-def _text(value):
-    if value is None:
-        return ""
-
-    if isinstance(value, (list, tuple, set)):
-        return " ".join(str(x) for x in value)
-
-    if isinstance(value, dict):
-        return " ".join(str(v) for v in value.values())
-
-    return str(value)
-
-
-def _normalise(value):
-    value = _text(value).lower().strip()
-    value = re.sub(r"\s+", " ", value)
-    return value
-
-
-def _number(value):
-    if value is None:
-        return None
-
-    if isinstance(value, (int, float)):
-        return float(value)
-
-    text = _text(value)
-    text = text.replace(",", "")
-    text = text.replace("R", "")
-    text = text.replace("$", "")
-    text = text.replace(" ", "")
-
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
-
-    if not match:
-        return None
-
+def get_place_details(place_id):
     try:
-        return float(match.group())
-    except Exception:
-        return None
-
-
-def _first(place, keys):
-    for key in keys:
-        value = place.get(key)
-
-        if value not in (None, "", [], {}):
-            return value
-
-    return None
-
-
-# ============================================================
-# AREA FILTERING
-# ============================================================
-
-def _area_matches(place, requested_area=None):
-
-    if not requested_area:
-        return True
-
-    requested = _normalise(requested_area)
-
-    if not requested:
-        return True
-
-    area_fields = [
-        place.get("location"),
-        place.get("address"),
-        place.get("formatted_address"),
-        place.get("vicinity"),
-        place.get("suburb"),
-        place.get("area"),
-        place.get("city"),
-        place.get("town"),
-        place.get("region"),
-        place.get("locality"),
-        place.get("location_name"),
-        place.get("address_locality"),
-    ]
-
-    combined = " ".join(
-        _normalise(x)
-        for x in area_fields
-        if x not in (None, "", [], {})
-    )
-
-    if not combined:
-        return False
-
-    if requested in combined:
-        return True
-
-    requested_words = requested.split()
-
-    if len(requested_words) == 1:
-        return requested in combined
-
-    matches = sum(
-        1 for word in requested_words
-        if word in combined
-    )
-
-    return matches >= max(1, len(requested_words) - 1)
-
-
-# ============================================================
-# PROPERTY TYPE
-# ============================================================
-
-HOUSE_WORDS = {
-    "house",
-    "home",
-    "free standing",
-    "freestanding",
-    "residential house",
-    "family home",
-    "townhouse",
-    "town house",
-    "duplex",
-    "villa",
-    "cottage",
-    "farm house",
-    "farmhouse",
-}
-
-NON_HOUSE_WORDS = {
-    "office",
-    "commercial",
-    "warehouse",
-    "industrial",
-    "retail",
-    "shop",
-    "business",
-    "restaurant",
-    "hotel",
-    "vacant land",
-    "land",
-    "plot",
-    "stand",
-    "parking",
-    "garage only",
-    "apartment block",
-}
-
-
-def _property_text(place):
-
-    fields = [
-        place.get("title"),
-        place.get("name"),
-        place.get("description"),
-        place.get("property_type"),
-        place.get("type"),
-        place.get("category"),
-        place.get("propertyType"),
-        place.get("listing_type"),
-    ]
-
-    return " ".join(
-        _normalise(x)
-        for x in fields
-        if x not in (None, "", [], {})
-    )
-
-
-def _is_residential(place):
-
-    text = _property_text(place)
-
-    for word in NON_HOUSE_WORDS:
-        if word in text:
-            return False
-
-    for word in HOUSE_WORDS:
-        if word in text:
-            return True
-
-    property_type = _normalise(
-        _first(
-            place,
-            [
-                "property_type",
-                "propertyType",
-                "type",
-                "category",
-            ],
-        )
-    )
-
-    if property_type:
-
-        residential_types = [
-            "house",
-            "townhouse",
-            "duplex",
-            "villa",
-            "cottage",
-            "residential",
-            "home",
-        ]
-
-        return any(
-            x in property_type
-            for x in residential_types
-        )
-
-    return True
-
-
-# ============================================================
-# SELLER / OWNER SIGNALS
-# ============================================================
-
-OWNER_WORDS = {
-    "owner",
-    "private seller",
-    "private",
-    "direct owner",
-    "owner listed",
-    "owner listing",
-    "selling privately",
-    "no agent",
-    "by owner",
-    "for sale by owner",
-    "fsbo",
-}
-
-AGENT_WORDS = {
-    "estate agent",
-    "real estate agent",
-    "property agent",
-    "realtor",
-    "agency",
-    "estate agency",
-    "property group",
-    "property specialist",
-}
-
-
-def _seller_signal(place):
-
-    fields = [
-        place.get("seller"),
-        place.get("seller_name"),
-        place.get("seller_type"),
-        place.get("contact_type"),
-        place.get("description"),
-        place.get("title"),
-        place.get("agent"),
-        place.get("agency"),
-        place.get("listed_by"),
-        place.get("listing_agent"),
-    ]
-
-    text = " ".join(
-        _normalise(x)
-        for x in fields
-        if x not in (None, "", [], {})
-    )
-
-    owner_hits = [
-        word
-        for word in OWNER_WORDS
-        if word in text
-    ]
-
-    agent_hits = [
-        word
-        for word in AGENT_WORDS
-        if word in text
-    ]
-
-    if owner_hits and not agent_hits:
-        return "Owner/private seller", 35
-
-    if agent_hits and not owner_hits:
-        return "Agent listing", -10
-
-    if owner_hits and agent_hits:
-        return "Mixed seller signal", 15
-
-    return "Seller not explicitly identified", 0
-
-
-# ============================================================
-# PRICE REDUCTION
-# ============================================================
-
-def _price_reduction(place):
-
-    old_price = _first(
-        place,
-        [
-            "previous_price",
-            "old_price",
-            "original_price",
-            "previousPrice",
-            "oldPrice",
-            "originalPrice",
-            "price_before",
-            "priceBefore",
-        ],
-    )
-
-    current_price = _first(
-        place,
-        [
-            "price",
-            "current_price",
-            "currentPrice",
-            "listing_price",
-            "listingPrice",
-        ],
-    )
-
-    old_number = _number(old_price)
-    current_number = _number(current_price)
-
-    if (
-        old_number is None
-        or current_number is None
-        or old_number <= 0
-        or current_number <= 0
-        or current_number >= old_number
-    ):
-        return {
-            "detected": False,
-            "percentage": None,
-            "reason": None,
-            "score": 0,
+        url = "https://maps.googleapis.com/maps/api/place/details/json"
+        params = {
+            "place_id": place_id,
+            "fields": "name,formatted_phone_number,website",
+            "key": GOOGLE_API_KEY,
         }
-
-    reduction = old_number - current_number
-
-    percentage = (
-        reduction / old_number
-    ) * 100
-
-    if percentage >= 10:
-        score = 30
-    elif percentage >= 5:
-        score = 20
-    else:
-        score = 10
-
-    return {
-        "detected": True,
-        "percentage": round(percentage, 1),
-        "reason": (
-            f"Price reduced by {percentage:.1f}%"
-        ),
-        "score": score,
-    }
+        response = requests.get(url, params=params, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") == "OK":
+            result = data.get("result", {})
+            return {
+                "phone": result.get("formatted_phone_number"),
+                "website": result.get("website"),
+            }
+        return {}
+    except Exception as exc:
+        print("Place Details Error:", str(exc))
+        return {}
 
 
-# ============================================================
-# TIME ON MARKET
-# ============================================================
-
-def _days_on_market(place):
-
-    value = _first(
-        place,
-        [
-            "days_on_market",
-            "daysOnMarket",
-            "days_listed",
-            "daysListed",
-            "listing_days",
-            "listingDays",
-            "days",
-        ],
-    )
-
-    days = _number(value)
-
-    if days is None:
-        return {
-            "detected": False,
-            "days": None,
-            "reason": None,
-            "score": 0,
-        }
-
-    days = int(days)
-
-    if days >= 180:
-        score = 30
-    elif days >= 120:
-        score = 22
-    elif days >= 90:
-        score = 18
-    elif days >= 60:
-        score = 8
-    else:
-        score = 0
-
-    reason = None
-
-    if score > 0:
-        reason = (
-            f"Listed for approximately {days} days"
+def get_google_supplemental(location, query="houses for sale"):
+    """Google Places remains supplemental, not a primary listing source."""
+    if not GOOGLE_API_KEY:
+        print("GOOGLE_API_KEY not configured")
+        return []
+    try:
+        print("Starting Google Places (supplemental)")
+        url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+        response = requests.get(
+            url,
+            params={"query": f"{query} in {location}", "key": GOOGLE_API_KEY},
+            timeout=20,
         )
+        response.raise_for_status()
+        data = response.json()
+        if data.get("status") != "OK":
+            print("Google Places unavailable:", data.get("status"))
+            return []
 
-    return {
-        "detected": score > 0,
-        "days": days,
-        "reason": reason,
-        "score": score,
-    }
-
-
-# ============================================================
-# MULTI-SOURCE SIGNAL
-# ============================================================
-
-def _source_count(place):
-
-    values = []
-
-    for key in [
-        "sources",
-        "source",
-        "source_count",
-        "sourceCount",
-        "listing_sources",
-        "listingSources",
-    ]:
-
-        value = place.get(key)
-
-        if value not in (None, "", [], {}):
-            values.append(value)
-
-    if not values:
-        return 1
-
-    source_value = values[0]
-
-    if isinstance(
-        source_value,
-        (list, tuple, set)
-    ):
-        return max(
-            1,
-            len(source_value)
-        )
-
-    number = _number(source_value)
-
-    if number is not None:
-        return max(
-            1,
-            int(number)
-        )
-
-    return 1
-
-
-# ============================================================
-# REASONING
-# ============================================================
-
-def _build_reasoning(
-    place,
-    seller_reason,
-    price_data,
-    market_data,
-):
-
-    reasons = []
-
-    # Seller signal
-    if (
-        seller_reason
-        and seller_reason !=
-        "Seller not explicitly identified"
-    ):
-
-        reasons.append({
-            "signal": seller_reason,
-            "detail": (
-                "Listing contains an "
-                "owner/private or seller-type signal."
-                if "Owner" in seller_reason
-                or "private" in seller_reason.lower()
-                else seller_reason
-            ),
-            "evidence": {
-                "seller_signal": seller_reason
-            },
-        })
-
-    # Price reduction
-    if price_data["detected"]:
-
-        reasons.append({
-            "signal": "Price reduction",
-            "detail": price_data["reason"],
-            "evidence": price_data,
-        })
-
-    # Time on market
-    if market_data["detected"]:
-
-        reasons.append({
-            "signal": "Long time on market",
-            "detail": market_data["reason"],
-            "evidence": {
-                "days_on_market":
-                    market_data["days"],
-                "threshold_days": 180,
-            },
-        })
-
-    # Source
-    source = place.get("source")
-
-    if source:
-
-        source_name = (
-            str(source)
-            .replace("_", " ")
-            .title()
-        )
-
-        reasons.append({
-            "signal": "Source",
-            "detail": (
-                f"Found via {source_name}."
-            ),
-            "evidence": {
-                "source": source
-            },
-        })
-
-    # Multi-source
-    source_count = _source_count(place)
-
-    if source_count > 1:
-
-        reasons.append({
-            "signal": "Multi-source evidence",
-            "detail": (
-                f"Information found across "
-                f"{source_count} sources."
-            ),
-            "evidence": {
-                "source_count": source_count
-            },
-        })
-
-    # Fallback
-    if not reasons:
-
-        reasons.append({
-            "signal": "Public listing signal",
-            "detail": (
-                "Potential seller opportunity "
-                "identified from available "
-                "public listing information."
-            ),
-            "evidence": {},
-        })
-
-    return reasons
-
-
-# ============================================================
-# SOURCE NORMALISATION
-# ============================================================
-
-def _normalise_source(place):
-
-    source = _normalise(
-        place.get(
-            "source",
-            "unknown"
-        )
-    )
-
-    if source in {
-        "facebook",
-        "facebook marketplace",
-        "facebook_marketplace",
-    }:
-        return "facebook_marketplace"
-
-    if source in {
-        "gumtree",
-        "gumtree south africa",
-    }:
-        return "gumtree"
-
-    if source in {
-        "google",
-        "google places",
-        "google_places",
-        "google places api",
-    }:
-        return "google_places"
-
-    return source or "unknown"
-
-
-# ============================================================
-# MAIN FILTER
-# ============================================================
-
-def filter_leads(
-    raw_places,
-    requested_area=None
-):
-
-    if not raw_places:
+        leads = []
+        for place in data.get("results", [])[:10]:
+            place_id = place.get("place_id")
+            details = get_place_details(place_id) if place_id else {}
+            address = place.get("formatted_address")
+            leads.append({
+                "name": place.get("name"),
+                "title": place.get("name"),
+                "address": address,
+                "location": address,
+                "rating": place.get("rating"),
+                "user_ratings_total": place.get("user_ratings_total"),
+                "phone": details.get("phone"),
+                "website": details.get("website"),
+                "source": "google_places",
+                "location_verified": bool(address),
+                "supplemental": True,
+            })
+        print("Google supplemental results:", len(leads))
+        return leads
+    except Exception as exc:
+        print("Google Places Exception:", str(exc))
         return []
 
-    filtered = []
-    seen = set()
 
-    for place in raw_places:
-
-        if not isinstance(place, dict):
-            continue
-
-        source = _normalise_source(place)
-
-        # ----------------------------------------------------
-        # FIELD NORMALISATION
-        # ----------------------------------------------------
-
-        if source == "google_places":
-
-            name = _first(
-                place,
-                [
-                    "name",
-                    "title",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "address",
-                    "formatted_address",
-                    "vicinity",
-                    "location",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "website",
-                    "url",
-                ],
-            )
-
-            place_id = place.get(
-                "place_id"
-            )
-
-            rating = place.get(
-                "rating"
-            )
-
-            reviews = _first(
-                place,
-                [
-                    "user_ratings_total",
-                    "reviews",
-                ],
-            )
-
-        elif source == "gumtree":
-
-            name = _first(
-                place,
-                [
-                    "title",
-                    "name",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "location",
-                    "address",
-                    "suburb",
-                    "city",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "url",
-                    "website",
-                ],
-            )
-
-            place_id = None
-            rating = None
-            reviews = None
-
-        elif source == "facebook_marketplace":
-
-            name = _first(
-                place,
-                [
-                    "title",
-                    "name",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "location",
-                    "address",
-                    "suburb",
-                    "city",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "url",
-                    "website",
-                ],
-            )
-
-            place_id = None
-            rating = None
-            reviews = None
-
-        else:
-
-            name = _first(
-                place,
-                [
-                    "name",
-                    "title",
-                ],
-            )
-
-            address = _first(
-                place,
-                [
-                    "address",
-                    "formatted_address",
-                    "location",
-                    "suburb",
-                    "city",
-                ],
-            )
-
-            website = _first(
-                place,
-                [
-                    "website",
-                    "url",
-                ],
-            )
-
-            place_id = place.get(
-                "place_id"
-            )
-
-            rating = place.get(
-                "rating"
-            )
-
-            reviews = _first(
-                place,
-                [
-                    "user_ratings_total",
-                    "reviews",
-                ],
-            )
-
-        # ----------------------------------------------------
-        # NORMALISED RECORD
-        # All qualification checks below use the source-specific
-        # fields we just extracted above. This fixes the old bug
-        # where area matching inspected the raw record instead of
-        # the cleaned address/location field.
-        # ----------------------------------------------------
-
-        normalized_place = dict(place)
-        normalized_place["source"] = source
-        normalized_place["name"] = name
-        normalized_place["title"] = _first(
-            place,
-            ["title", "name"]
-        ) or name
-        normalized_place["address"] = address
-        normalized_place["location"] = address
-        normalized_place["website"] = website
-
-        # ----------------------------------------------------
-        # NAME REQUIRED
-        # ----------------------------------------------------
-
-        if not name:
-            continue
-
-        # ----------------------------------------------------
-        # AREA FILTER
-        # IMPORTANT: check the NORMALISED location.
-        # ----------------------------------------------------
-
-        if not _area_matches(
-            normalized_place,
-            requested_area
-        ):
-            continue
-
-        # ----------------------------------------------------
-        # RESIDENTIAL FILTER
-        # ----------------------------------------------------
-
-        if not _is_residential(normalized_place):
-            continue
-
-        # ----------------------------------------------------
-        # DEDUPLICATION
-        # ----------------------------------------------------
-
-        unique_key = (
-            f"{source}-"
-            f"{_normalise(name)}-"
-            f"{_normalise(address)}"
-        )
-
-        if unique_key in seen:
-            continue
-
-        seen.add(unique_key)
-
-        # ----------------------------------------------------
-        # SELLER SIGNAL
-        # ----------------------------------------------------
-
-        seller_reason, seller_score = (
-            _seller_signal(normalized_place)
-        )
-
-        # ----------------------------------------------------
-        # PRICE SIGNAL
-        # ----------------------------------------------------
-
-        price_data = _price_reduction(
-            normalized_place
-        )
-
-        # ----------------------------------------------------
-        # MARKET TIME SIGNAL
-        # ----------------------------------------------------
-
-        market_data = _days_on_market(
-            normalized_place
-        )
-
-        # ----------------------------------------------------
-        # OPPORTUNITY SCORE
-        # ----------------------------------------------------
-
-        score = 0
-
-        # Strong seller signal
-        score += seller_score
-
-        # Price reduction
-        score += price_data["score"]
-
-        # Time on market
-        score += market_data["score"]
-
-        # Multi-source evidence
-        source_count = _source_count(
-            normalized_place
-        )
-
-        if source_count >= 3:
-            score += 20
-
-        elif source_count >= 2:
-            score += 12
-
-        # ----------------------------------------------------
-        # SCORE LIMIT
-        # ----------------------------------------------------
-
-        score = max(
-            0,
-            min(
-                100,
-                int(score)
-            )
-        )
-
-        # ----------------------------------------------------
-        # PRIORITY
-        # ----------------------------------------------------
-
-        if score >= 80:
-            priority = "Priority"
-
-        elif score >= 65:
-            priority = "High"
-
-        elif score >= 40:
-            priority = "Medium"
-
-        else:
-            priority = "Low"
-
-        # ----------------------------------------------------
-        # REASONING
-        # ----------------------------------------------------
-
-        reasoning = _build_reasoning(
-            normalized_place,
-            seller_reason,
-            price_data,
-            market_data,
-        )
-
-        # ----------------------------------------------------
-        # OUTPUT
-        # ----------------------------------------------------
-
-        filtered.append({
-
-            "name": name,
-
-            "address": address,
-            "location": address,
-            "location_verified": bool(address),
-            "url": _first(place, ["url", "link", "website"]),
-            "phone": _first(place, ["phone", "formatted_phone_number"]),
-            "price": _first(place, ["price", "current_price", "currentPrice", "listing_price", "listingPrice"]),
-            "seller_type": _first(place, ["seller_type", "sellerType", "contact_type"]),
-
-            "place_id": place_id,
-
-            "website": website,
-
-            "rating": rating,
-
-            "reviews": reviews,
-
-            "source": source,
-
-            "priority": priority,
-
-            "opportunity_priority": priority,
-
-            "opportunity_type":
-                "Seller Opportunity Signal",
-
-            # Seller signal
-            "seller_signal":
-                seller_reason,
-
-            # Price signal
-            "price_reduction_detected":
-                price_data["detected"],
-
-            "price_reduction_percentage":
-                price_data["percentage"],
-
-            # Market-time signal
-            "long_time_on_market":
-                market_data["detected"],
-
-            "days_on_market":
-                market_data["days"],
-
-            "days_listed":
-                market_data["days"],
-
-            # Structured signals
-            "signals": {
-
-                "seller": {
-                    "detected":
-                        seller_score > 0,
-                    "type":
-                        seller_reason,
-                    "score":
-                        max(
-                            0,
-                            seller_score
-                        ),
-                },
-
-                "price_reduction": {
-                    "detected":
-                        price_data[
-                            "detected"
-                        ],
-                    "reduction_percent":
-                        price_data[
-                            "percentage"
-                        ],
-                    "percentage":
-                        price_data[
-                            "percentage"
-                        ],
-                    "score":
-                        price_data[
-                            "score"
-                        ],
-                },
-
-                "long_listing": {
-                    "detected":
-                        market_data[
-                            "detected"
-                        ],
-                    "days_on_market":
-                        market_data[
-                            "days"
-                        ],
-                    "score":
-                        market_data[
-                            "score"
-                        ],
-                },
-
-                "multi_source": {
-                    "detected":
-                        source_count > 1,
-                    "source_count":
-                        source_count,
-                },
-            },
-
-            # Reasoning
-            "reasoning":
-                reasoning,
-
-            "signal_count":
-                sum(
-                    1
-                    for signal in [
-                        seller_score > 0,
-                        price_data[
-                            "detected"
-                        ],
-                        market_data[
-                            "detected"
-                        ],
-                        source_count > 1,
-                    ]
-                    if signal
-                ),
-
-            # Final score
-            "opportunity_score":
-                score,
-        })
-
-    # ========================================================
-    # SORT
-    # ========================================================
-
-    priority_order = {
-        "Priority": 4,
-        "High": 3,
-        "Medium": 2,
-        "Low": 1,
+def _normalise_discovery_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Add legacy filter/dashboard aliases without discarding discovery evidence."""
+    lead = dict(record)
+    title = lead.get("title") or lead.get("name") or ""
+    address = (
+        lead.get("address") or lead.get("suburb") or
+        lead.get("city") or lead.get("location") or ""
+    )
+    source = lead.get("source") or "openai_discovery"
+
+    lead["title"] = title
+    lead["name"] = lead.get("name") or title
+    lead["address"] = address
+    lead["location"] = address or lead.get("location") or ""
+    lead["url"] = lead.get("url") or lead.get("listing_url") or ""
+    lead["website"] = lead.get("website") or lead.get("listing_url") or ""
+    lead["price"] = lead.get("price") or lead.get("current_price") or ""
+    lead["seller_type"] = lead.get("seller_type") or lead.get("sellerType") or ""
+    lead["source"] = source
+    lead["discovery_source"] = source
+    lead["discovery_method"] = lead.get("discovery_method") or "openai_web_search"
+    lead["supplemental"] = False
+    # A private-owner advert is not automatically an exclusive mandate.
+    lead["exclusivity_verified"] = bool(
+        lead.get("exclusivity_status") == "verified_exclusive"
+        and lead.get("exclusivity_evidence")
+    )
+    return lead
+
+
+def _record_key(lead: Dict[str, Any]) -> str:
+    source = str(lead.get("source") or "").strip().lower()
+    url = str(lead.get("listing_url") or lead.get("url") or "").strip().lower().split("?")[0].rstrip("/")
+    if url:
+        return source + "|url|" + url
+    title = str(lead.get("title") or lead.get("name") or "").strip().lower()
+    address = str(lead.get("address") or lead.get("location") or "").strip().lower()
+    return source + "|property|" + " ".join((title, address))
+
+
+def _attach_discovery_fields(filtered: List[Dict[str, Any]], raw_discovery: List[Dict[str, Any]]) -> None:
+    """The existing filter returns a dashboard-safe subset; restore source evidence."""
+    lookup = {}
+    for raw in raw_discovery:
+        lookup[_record_key(raw)] = raw
+
+    # Match on source + title/address because filter_leads normalises name/title.
+    for item in filtered:
+        source = str(item.get("source") or "").strip().lower()
+        name = str(item.get("name") or item.get("title") or "").strip().lower()
+        address = str(item.get("address") or item.get("location") or "").strip().lower()
+        match = None
+        for raw in raw_discovery:
+            if str(raw.get("source") or "").strip().lower() != source:
+                continue
+            raw_name = str(raw.get("title") or raw.get("name") or "").strip().lower()
+            raw_address = str(raw.get("address") or raw.get("location") or raw.get("suburb") or "").strip().lower()
+            if name == raw_name and (not address or not raw_address or address == raw_address):
+                match = raw
+                break
+        if match:
+            # Preserve discovery-only evidence and useful original fields.
+            for key in (
+                "listing_url", "source_name", "source_evidence", "seller_intent_signals",
+                "exclusivity_status", "exclusivity_evidence", "exclusivity_verified",
+                "opportunity_type", "confidence", "property_type", "bedrooms",
+                "bathrooms", "seller_name", "email", "description", "discovery_method",
+            ):
+                if key in match:
+                    item[key] = match[key]
+            if not item.get("url"):
+                item["url"] = match.get("listing_url", "")
+            if not item.get("website"):
+                item["website"] = match.get("listing_url", "")
+
+
+def generate_leads(query: str, location: str) -> Dict:
+    location = str(location or "").strip()
+    query = str(query or "houses for sale").strip()
+
+    if not location:
+        return {
+            "success": False,
+            "engine": "multi_source",
+            "count": 0,
+            "sources": [],
+            "source_counts": {},
+            "filtered_source_counts": {},
+            "leads": [],
+            "error": "Location is required",
+        }
+
+    raw_leads: List[Dict[str, Any]] = []
+    raw_discovery_leads: List[Dict[str, Any]] = []
+    source_counts: Dict[str, int] = {
+        "gumtree": 0,
+        "facebook_marketplace": 0,
+        "google_places": 0,
+    }
+    discovery_result: Dict[str, Any] = {
+        "success": False,
+        "engine": "openai_multi_source_discovery",
+        "count": 0,
+        "sources": [],
+        "source_counts": {},
+        "source_diagnostics": [],
+        "errors": [],
     }
 
-    filtered.sort(
-        key=lambda x: (
-            priority_order.get(
-                x.get(
-                    "opportunity_priority",
-                    "Low"
-                ),
-                1,
-            ),
-            x.get(
-                "opportunity_score",
-                0
-            ),
-        ),
-        reverse=True,
-    )
+    # 1. OpenAI public-web discovery across the configured marketplace targets.
+    if DISCOVERY_ENABLED and generate_discovery_leads:
+        if os.getenv("OPENAI_API_KEY"):
+            print("Starting OpenAI discovery pipeline", flush=True)
+            try:
+                discovery_result = generate_discovery_leads(
+                    location=location,
+                    property_type=query,
+                    max_results_per_source=DISCOVERY_MAX_RESULTS_PER_SOURCE,
+                ) or discovery_result
+                if not isinstance(discovery_result, dict):
+                    raise RuntimeError("Discovery engine returned an unexpected response type")
 
-    return filtered
+                raw_discovery_leads = [
+                    _normalise_discovery_record(item)
+                    for item in (discovery_result.get("leads") or [])
+                    if isinstance(item, dict)
+                ]
+                for source, count in (discovery_result.get("source_counts") or {}).items():
+                    source_counts[source] = int(count or 0)
+                raw_leads.extend(raw_discovery_leads)
+                print("OpenAI model:", discovery_result.get("model") or os.getenv("OPENAI_MODEL") or "gpt-6-astra", flush=True)
+                print("OpenAI discovery candidates added:", len(raw_discovery_leads), flush=True)
+                for diagnostic in discovery_result.get("source_diagnostics", []):
+                    if isinstance(diagnostic, dict):
+                        print(
+                            "OpenAI source:", diagnostic.get("source_name", diagnostic.get("source")),
+                            "| status:", diagnostic.get("status"),
+                            "| leads:", diagnostic.get("raw_count", 0),
+                            "| seconds:", diagnostic.get("duration_seconds", 0),
+                            "| note:", diagnostic.get("notes", ""),
+                            "| error:", diagnostic.get("error", ""),
+                        )
+                if discovery_result.get("error"):
+                    print("OpenAI discovery warning:", discovery_result.get("error"))
+            except Exception as exc:
+                discovery_result = dict(discovery_result)
+                discovery_result["error"] = str(exc)
+                print("OpenAI discovery integration error:", str(exc))
+        else:
+            discovery_result["error"] = "OPENAI_API_KEY is not configured"
+            print("OpenAI discovery skipped: OPENAI_API_KEY is not configured", flush=True)
+    elif not DISCOVERY_ENABLED:
+        discovery_result["error"] = "Discovery disabled by DISCOVERY_ENABLED"
+        print("OpenAI discovery skipped: DISCOVERY_ENABLED is false", flush=True)
+    elif DISCOVERY_IMPORT_ERROR:
+        discovery_result["error"] = DISCOVERY_IMPORT_ERROR
+        print("OpenAI discovery import failed:", DISCOVERY_IMPORT_ERROR, flush=True)
+    else:
+        discovery_result["error"] = "Discovery function is unavailable for an unknown reason"
+        print("OpenAI discovery skipped: function unavailable for an unknown reason", flush=True)
+
+    # 2. Existing Gumtree source (unchanged call contract).
+    print("Starting Gumtree")
+    try:
+        gumtree_results = search_gumtree(location=location, max_items=GUMTREE_MAX_ITEMS) or {}
+        gumtree_leads = gumtree_results.get("leads", []) if gumtree_results.get("success") else []
+        gumtree_leads = [item for item in gumtree_leads if isinstance(item, dict)]
+        source_counts["gumtree"] = len(gumtree_leads)
+        raw_leads.extend(gumtree_leads)
+        print("Gumtree raw listings added:", len(gumtree_leads))
+    except Exception as exc:
+        print("Gumtree Error:", str(exc))
+
+    # 3. Existing Facebook Marketplace source (enabled as in the latest file).
+    if FACEBOOK_ENABLED:
+        print("Starting Facebook Marketplace")
+        try:
+            facebook_leads = get_facebook_marketplace(
+                location=location,
+                max_items=FACEBOOK_MAX_ITEMS,
+                query=query,
+            ) or []
+            facebook_leads = [item for item in facebook_leads if isinstance(item, dict)]
+            source_counts["facebook_marketplace"] = len(facebook_leads)
+            raw_leads.extend(facebook_leads)
+            print("Facebook raw listings added:", len(facebook_leads))
+        except Exception as exc:
+            print("Facebook integration error:", str(exc))
+    else:
+        print("Facebook Marketplace disabled")
+
+    # 4. Google Places remains fallback-only, preserving the previous behaviour.
+    if not raw_leads:
+        google_leads = get_google_supplemental(location, query=query)
+        source_counts["google_places"] = len(google_leads)
+        raw_leads.extend(google_leads)
+        print("Google supplemental results added:", len(google_leads))
+    else:
+        print("Google Places skipped because another source returned raw records")
+
+    print("RAW SOURCE COUNTS:", source_counts)
+    print("TOTAL RAW RECORDS:", len(raw_leads))
+
+    try:
+        leads = filter_leads(raw_leads, requested_area=location)
+    except Exception as exc:
+        print("Filter Error:", str(exc))
+        return {
+            "success": False,
+            "engine": "multi_source",
+            "count": 0,
+            "sources": list(source_counts.keys()),
+            "source_counts": source_counts,
+            "filtered_source_counts": {},
+            "discovery": discovery_result,
+            "leads": [],
+            "error": str(exc),
+        }
+
+    _attach_discovery_fields(leads, raw_discovery_leads)
+
+    filtered_source_counts: Dict[str, int] = {}
+    for lead in leads:
+        source = lead.get("source", "unknown")
+        filtered_source_counts[source] = filtered_source_counts.get(source, 0) + 1
+
+    print("FILTERED SOURCE COUNTS:", filtered_source_counts)
+    print("Returning", len(leads), "qualified opportunities")
+
+    return {
+        "success": True,
+        "engine": "multi_source",
+        "count": len(leads),
+        "sources": list(source_counts.keys()),
+        "source_counts": source_counts,
+        "filtered_source_counts": filtered_source_counts,
+        "requested_location": location,
+        "discovery": {
+            "success": bool(discovery_result.get("success")),
+            "engine": discovery_result.get("engine", "openai_multi_source_discovery"),
+            "count": discovery_result.get("count", len(raw_discovery_leads)),
+            "sources": discovery_result.get("sources", []),
+            "successful_sources": discovery_result.get("successful_sources", []),
+            "source_counts": discovery_result.get("source_counts", {}),
+            "duplicate_count": discovery_result.get("duplicate_count", 0),
+            "source_diagnostics": discovery_result.get("source_diagnostics", []),
+            "errors": discovery_result.get("errors", []),
+            "error": discovery_result.get("error"),
+            "exclusivity_note": discovery_result.get("exclusivity_note"),
+        },
+        "leads": leads,
+    }
