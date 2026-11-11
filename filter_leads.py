@@ -243,6 +243,111 @@ AGENT_WORDS = {
 }
 
 
+def _is_business_or_agent_listing(place):
+    """Reject listings advertised by an agent, agency, or business account.
+
+    This is deliberately separate from opportunity scoring: a strong price,
+    relisting, or multi-source signal must never turn an agency advert into
+    a private-seller opportunity.
+    """
+    source = _normalise_source(place)
+
+    # Google Places is a business directory, not an owner-seller feed.
+    if source == "google_places":
+        return True
+
+    # Structured fields are the strongest evidence and are checked first.
+    identity_fields = (
+        "seller_type", "sellerType", "contact_type", "contactType",
+        "account_type", "accountType", "advertiser_type", "advertiserType",
+        "profile_type", "profileType", "listed_by_type", "listedByType",
+        "agent", "agency", "listing_agent", "listingAgent",
+        "company", "company_name", "companyName", "business_name",
+        "businessName", "organisation", "organization", "dealer_name",
+        "dealerName", "brokerage", "office_name", "officeName",
+    )
+    strong_agent = re.compile(
+        r"\b(?:estate agent|real estate agent|property agent|property practitioner|"
+        r"registered property practitioner|realtor|broker|agency|estate agency|"
+        r"letting agent|listing agent|sales agent|property consultant|"
+        r"property group|realty|brokerage)\b",
+        re.I,
+    )
+    business_account = re.compile(
+        r"\b(?:business account|company account|agency account|professional seller|"
+        r"business seller|registered business|pty\s*ltd|proprietary limited|"
+        r"(?!private\s+)(?:cc|incorporated|limited))\b",
+        re.I,
+    )
+
+    for key in identity_fields:
+        value = place.get(key)
+        if value in (None, "", [], {}):
+            continue
+        text = _normalise(value)
+        if text in {"agent", "agency", "business", "company", "broker", "realtor", "professional"}:
+            return True
+        if strong_agent.search(text) or business_account.search(text):
+            return True
+
+    # Names are checked separately: business suffixes and agency descriptors
+    # in an advertiser identity are strong evidence, but not in property titles.
+    advertiser_names = (
+        "seller", "seller_name", "sellerName", "listed_by", "listedBy",
+        "poster_name", "posterName", "advertiser", "advertiser_name",
+        "advertiserName", "contact_name", "contactName", "agent_name",
+        "agentName", "agency_name", "agencyName",
+    )
+    company_name_pattern = re.compile(
+        r"\b(?:pty\s*ltd|proprietary limited|incorporated|realty|"
+        r"estate agency|property agency|properties group|property group|"
+        r"estate agents?|real estate|property practitioners?)\b",
+        re.I,
+    )
+    for key in advertiser_names:
+        value = place.get(key)
+        if value in (None, "", [], {}):
+            continue
+        text = _normalise(value)
+        if strong_agent.search(text) or business_account.search(text) or company_name_pattern.search(text):
+            return True
+
+    # Listing copy is useful when feeds omit a structured seller type.
+    # Avoid treating "no agents" / "agents not wanted" as agent advertising.
+    copy_fields = (
+        "title", "description", "_all_title", "_all_description",
+        "_all_listed_by", "_all_seller", "_all_seller_type",
+    )
+    copy = " ".join(_normalise(place.get(k)) for k in copy_fields)
+    negative_agent_context = re.search(
+        r"\b(?:no agents?|agents? (?:please )?not|not interested in agents?|"
+        r"no estate agents?|owners? only|private seller)\b",
+        copy,
+        re.I,
+    )
+    positive_agent_context = re.search(
+        r"\b(?:contact|call|speak to|listed by|marketed by|presented by|"
+        r"brought to you by|for more information contact)\b.{0,65}\b"
+        r"(?:agent|agency|realtor|broker|property practitioner|consultant)\b|"
+        r"\b(?:our|the)\s+(?:estate )?agent\b|"
+        r"\b(?:estate agent|real estate agent|property practitioner|"
+        r"property agency|estate agency|realtor|brokerage)\b",
+        copy,
+        re.I,
+    )
+    if positive_agent_context and not negative_agent_context:
+        return True
+
+    # A seller identity containing a clear company legal suffix is a business,
+    # even when the feed does not label the account type.
+    for key in advertiser_names:
+        value = place.get(key)
+        if value and re.search(r"\b(?:pty\.?\s*ltd\.?|proprietary limited|\binc\.?|\bltd\.?)\b", _normalise(value), re.I):
+            return True
+
+    return False
+
+
 def _seller_signal(place):
 
     fields = [
@@ -674,6 +779,12 @@ def filter_leads(raw_places, requested_area=None):
             continue
         place = dict(original)
         source = _normalise_source(place)
+        place["source"] = source
+
+        # Hard exclusion: agency/business listings cannot qualify regardless
+        # of price reductions, listing age, relisting, or multi-source score.
+        if _is_business_or_agent_listing(place):
+            continue
 
         if source == "google_places":
             name = _first(place, ["name", "title"])
